@@ -1,7 +1,7 @@
 import chalk from 'chalk';
 import Table from 'cli-table3';
 import { loadConfig, getControlPlaneUrl } from '../config.js';
-import { EndpointSummary } from '@modu/shared';
+import { EndpointSummary } from '../shared.js';
 
 export interface ListOptions {
   json?: boolean;

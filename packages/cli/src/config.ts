@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { CliConfig, DEFAULT_CONTROL_PLANE_URL, DEFAULT_PROXY_URL } from '@modu/shared';
+import { CliConfig, DEFAULT_CONTROL_PLANE_URL, DEFAULT_PROXY_URL } from './shared.js';
 
 export function getDefaultConfigPath(): string {
   if (process.env.MODU_CONFIG_FILE) {

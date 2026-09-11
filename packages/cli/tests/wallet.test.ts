@@ -23,9 +23,9 @@ describe('Algorand Wallet Generation & Validation', () => {
     assert.strictEqual(algosdk.isValidAddress('invalid-address'), false);
     assert.strictEqual(algosdk.isValidAddress(''), false);
     assert.strictEqual(algosdk.isValidAddress('0x1234567890abcdef1234567890abcdef12345678'), false);
-    // Modified checksum
+    // Modified address / invalid checksum
     const account = algosdk.generateAccount();
-    const corrupted = account.addr.slice(0, 57) + (account.addr[57] === 'A' ? 'B' : 'A');
+    const corrupted = (account.addr[0] === 'A' ? 'B' : 'A') + account.addr.slice(1);
     assert.strictEqual(algosdk.isValidAddress(corrupted), false);
   });
 });

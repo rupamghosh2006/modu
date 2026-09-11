@@ -1,7 +1,7 @@
 import chalk from 'chalk';
 import Table from 'cli-table3';
 import { loadConfig, getControlPlaneUrl } from '../config.js';
-import { RequestLog } from '@modu/shared';
+import { RequestLog } from '../shared.js';
 
 export interface LogsOptions {
   follow?: boolean;

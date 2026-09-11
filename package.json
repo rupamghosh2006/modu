@@ -13,7 +13,8 @@
     "build:cli": "npm run --prefix packages/cli build",
     "build": "npm run build:shared && npm run build:control-plane && npm run build:proxy && npm run build:cli",
     "test": "npm run test --workspaces --if-present",
-    "clean": "npm run clean --workspaces --if-present"
+    "clean": "npm run clean --workspaces --if-present",
+    "publish:cli": "npm publish --workspace=packages/cli --access public"
   },
   "devDependencies": {
     "typescript": "^5.4.5"
