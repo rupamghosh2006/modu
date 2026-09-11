@@ -1,0 +1,63 @@
+# ===================================================
+# Render Infrastructure Blueprint for modu
+# https://render.com/docs/blueprint-spec
+# ===================================================
+
+services:
+  # 1. modu Control Plane API
+  - type: web
+    name: modu-control-plane
+    runtime: docker
+    dockerfilePath: Dockerfile.control-plane
+    plan: starter # Persistent disk requires starter plan or above on Render
+    region: oregon
+    healthCheckPath: /health
+    disk:
+      name: modu-data
+      mountPath: /data
+      sizeGB: 1
+    envVars:
+      - key: PORT
+        value: 3000
+      - key: HOST
+        value: 0.0.0.0
+      - key: MODU_STORE_PATH
+        value: /data/control-plane-store.json
+      - key: CONTROL_PLANE_URL
+        fromService:
+          type: web
+          name: modu-control-plane
+          property: host
+      - key: PROXY_URL
+        fromService:
+          type: web
+          name: modu-proxy
+          property: host
+
+  # 2. modu Edge Reverse Proxy
+  - type: web
+    name: modu-proxy
+    runtime: docker
+    dockerfilePath: Dockerfile.proxy
+    plan: free
+    region: oregon
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: 4000
+      - key: HOST
+        value: 0.0.0.0
+      - key: CONTROL_PLANE_URL
+        fromService:
+          type: web
+          name: modu-control-plane
+          property: host
+      - key: PROXY_URL
+        fromService:
+          type: web
+          name: modu-proxy
+          property: host
+      - key: INDEXER_URL
+        value: https://testnet-idx.algonode.cloud
+      - key: CHALLENGE_TIMEOUT_SECONDS
+        value: 300

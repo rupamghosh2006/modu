@@ -1,0 +1,21 @@
+{
+  "name": "modu-monorepo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "modu — CLI and infrastructure to monetize any API with x402 on Algorand",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build:shared": "npm run --prefix packages/shared build",
+    "build:control-plane": "npm run --prefix packages/control-plane build",
+    "build:proxy": "npm run --prefix packages/proxy build",
+    "build:cli": "npm run --prefix packages/cli build",
+    "build": "npm run build:shared && npm run build:control-plane && npm run build:proxy && npm run build:cli",
+    "test": "npm run test --workspaces --if-present",
+    "clean": "npm run clean --workspaces --if-present"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.5"
+  }
+}

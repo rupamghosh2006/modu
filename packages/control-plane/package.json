@@ -1,0 +1,27 @@
+{
+  "name": "@modu/control-plane",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist/server.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "dev": "tsx src/server.ts",
+    "test": "tsx --test tests/**/*.test.ts",
+    "prisma:generate": "prisma generate",
+    "clean": "node -e \"try { require('fs').rmSync('dist', { recursive: true, force: true }) } catch (e) {}\""
+  },
+  "dependencies": {
+    "@fastify/cors": "^9.0.1",
+    "@modu/shared": "*",
+    "@prisma/client": "^5.14.0",
+    "algosdk": "^2.7.0",
+    "fastify": "^4.27.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.12.12",
+    "prisma": "^5.14.0",
+    "tsx": "^4.10.5",
+    "typescript": "^5.4.5"
+  }
+}
