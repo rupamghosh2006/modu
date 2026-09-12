@@ -55,3 +55,25 @@ export interface EndpointStats {
   revenueByDay: DailyRevenue[];
   topPayers: TopPayer[];
 }
+
+export function fromBaseUnits(baseUnits: string | number | bigint, decimals: number = 6): string {
+  const str = String(baseUnits).trim();
+  if (!/^\d+$/.test(str)) {
+    throw new Error(`Invalid base units format: "${baseUnits}"`);
+  }
+
+  if (str.length <= decimals) {
+    const padded = str.padStart(decimals, '0');
+    const trimmed = padded.replace(/0+$/, '');
+    return trimmed.length > 0 ? `0.${trimmed}` : '0';
+  }
+
+  const whole = str.slice(0, str.length - decimals);
+  const fraction = str.slice(str.length - decimals).replace(/0+$/, '');
+  return fraction.length > 0 ? `${whole}.${fraction}` : whole;
+}
+
+export function encodeNote(nonce: string, prefix = 'modu:'): Uint8Array {
+  const text = `${prefix}${nonce}`;
+  return new TextEncoder().encode(text);
+}

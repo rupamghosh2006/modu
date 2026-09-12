@@ -15,7 +15,7 @@ export function createProgram(): Command {
   program
     .name('modu')
     .description('Turn any existing HTTP API endpoint into a pay-per-request endpoint with x402 on Algorand')
-    .version('0.1.2')
+    .version('0.1.4')
     .option('--json', 'Output results as JSON for scriptability');
 
   // modu config [address]

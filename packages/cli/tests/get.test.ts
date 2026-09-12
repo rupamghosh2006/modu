@@ -87,7 +87,7 @@ describe('modu get Command & x402 Browser Payment Flow', () => {
     assert(formatted.includes('"ok": true'));
   });
 
-  it('renders payment HTML page containing all supported wallets (Pera, Defly, Lute, Kibisis, Testnet Signer)', () => {
+  it('renders payment HTML page exclusively for Lute wallet connection and signing', () => {
     const html = renderPaymentPage({
       url: 'https://modu-proxy.onrender.com/p/e53c88',
       payTo: 'YAVQWCPKM6D4HR63K7GYTR5AFR727RCA3VNWSMSJ7VTUJHNRRHEIIJJP4A',
@@ -99,22 +99,21 @@ describe('modu get Command & x402 Browser Payment Flow', () => {
       network: 'algorand-testnet',
     });
 
-    // Check that title and terminal aesthetic are present
-    assert(html.includes('modu — x402 payment — 80×24'));
+    // Check that title, terminal aesthetic, and Lute branding are present
+    assert(html.includes('modu — Lute Payment Approval — 80×24'));
     assert(html.includes('0.3 ALGO'));
     assert(html.includes('YAVQWCPKM6D4HR63K7GYTR5AFR727RCA3VNWSMSJ7VTUJHNRRHEIIJJP4A'));
-    assert(html.includes('53e430bb780ff02753948102a6635223'));
+    assert(html.includes('53e430bb780f'));
 
-    // Check that all 5 required wallet tabs and features are included
-    assert(html.includes('Pera'));
-    assert(html.includes('Defly'));
-    assert(html.includes('Lute'));
-    assert(html.includes('Kibisis'));
-    assert(html.includes('Testnet Signer'));
-    assert(html.includes('Paste TxID'));
+    // Check that Lute Connect and button are present
+    assert(html.includes('Lute Wallet'));
+    assert(html.includes('Connect Lute Wallet'));
+    assert(html.includes('class LuteConnect'));
 
-    // Check that Algorand URI deep link is generated
-    assert(html.includes('algorand://YAVQWCPKM6D4HR63K7GYTR5AFR727RCA3VNWSMSJ7VTUJHNRRHEIIJJP4A?amount=300000'));
+    // Check that other wallets are NOT present
+    assert(!html.includes('tab-pera'));
+    assert(!html.includes('tab-defly'));
+    assert(!html.includes('tab-kibisis'));
   });
 
   it('handles directly supplied --txid flag without opening payment server', async () => {
@@ -165,7 +164,7 @@ describe('modu get Command & x402 Browser Payment Flow', () => {
       const payRes = await fetch(localPayUrl);
       assert.equal(payRes.status, 200);
       const payHtml = await payRes.text();
-      assert(payHtml.includes('x402 payment'));
+      assert(payHtml.includes('Lute Payment Approval'));
 
       // 2. Submit payment completion via POST /api/complete
       const completeUrl = localPayUrl.replace('/pay', '/api/complete');

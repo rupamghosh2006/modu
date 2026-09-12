@@ -3,7 +3,7 @@ import readline from 'node:readline';
 import chalk from 'chalk';
 import open from 'open';
 import algosdk from 'algosdk';
-import { fromBaseUnits, encodeNote } from '@modu/shared';
+import { fromBaseUnits, encodeNote } from '../shared.js';
 import { logInfo, logWarn, logError } from '../logger.js';
 
 export interface GetOptions {
@@ -68,7 +68,7 @@ export function formatHttpResponse(res: Response, bodyText: string): string {
 }
 
 /**
- * Render the Mac terminal styled payment HTML page
+ * Render the Mac terminal styled Lute-only payment HTML page
  */
 export function renderPaymentPage(params: {
   url: string;
@@ -80,25 +80,14 @@ export function renderPaymentPage(params: {
   nonce: string;
   network: string;
 }): string {
-  const { url, payTo, amountMicro, humanAmount, assetName, assetId, nonce, network } = params;
-  const isAlgo = assetId === '0' || assetName === 'ALGO';
-  const encodedNoteStr = encodeURIComponent(`modu:${nonce}`);
-  
-  // Standard Algorand URI scheme for mobile wallets (Pera, Defly)
-  const algorandUri = isAlgo
-    ? `algorand://${payTo}?amount=${amountMicro}&note=${encodedNoteStr}`
-    : `algorand://${payTo}?amount=${amountMicro}&asset=${assetId}&note=${encodedNoteStr}`;
-
-  const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(
-    algorandUri
-  )}`;
+  const { url, payTo, humanAmount, assetName, nonce, network } = params;
 
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>modu — x402 payment — 80×24</title>
+  <title>modu — Lute Payment Approval — 80×24</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     html, body { height: 100%; margin: 0; }
@@ -115,12 +104,8 @@ export function renderPaymentPage(params: {
       -webkit-font-smoothing: antialiased;
       -moz-osx-font-smoothing: grayscale;
     }
-    ::-webkit-scrollbar { width: 8px; height: 8px; }
-    ::-webkit-scrollbar-track { background: transparent; }
-    ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.15); border-radius: 4px; }
-    ::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.25); }
     .mac-window {
-      width: 680px;
+      width: 620px;
       max-width: 100%;
       background: rgba(22, 24, 29, 0.96);
       border-radius: 12px;
@@ -181,7 +166,7 @@ export function renderPaymentPage(params: {
       pointer-events: none;
     }
     .terminal-body {
-      padding: 22px 26px 26px 26px;
+      padding: 24px 28px 28px 28px;
       font-family: ui-monospace, "SF Mono", Menlo, Monaco, Consolas, "Liberation Mono", monospace;
       font-size: 13.5px;
       line-height: 1.65;
@@ -193,7 +178,7 @@ export function renderPaymentPage(params: {
       margin-bottom: 8px;
     }
     .cli-prompt-line {
-      margin-bottom: 14px;
+      margin-bottom: 16px;
       font-size: 13.5px;
       word-break: break-all;
     }
@@ -211,7 +196,7 @@ export function renderPaymentPage(params: {
     }
     .term-desc {
       color: #9ca3af;
-      margin-bottom: 16px;
+      margin-bottom: 18px;
       font-size: 13px;
       line-height: 1.5;
     }
@@ -219,15 +204,15 @@ export function renderPaymentPage(params: {
       background: #111318;
       border: 1px solid #282c34;
       border-radius: 8px;
-      padding: 12px 16px;
-      margin-bottom: 18px;
+      padding: 14px 16px;
+      margin-bottom: 20px;
       font-size: 13px;
     }
     .session-row {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      margin-bottom: 6px;
+      margin-bottom: 8px;
     }
     .session-row:last-child { margin-bottom: 0; }
     .session-label { color: #8b949e; }
@@ -249,143 +234,82 @@ export function renderPaymentPage(params: {
       border-radius: 4px;
       font-weight: 600;
     }
-    .tabs-container {
-      display: flex;
-      gap: 6px;
-      margin-bottom: 16px;
-      flex-wrap: wrap;
+    .badge-net {
+      background: #232731;
+      border: 1px solid #444c56;
+      color: #93c5fd;
+      padding: 1px 6px;
+      border-radius: 4px;
+      font-size: 11px;
     }
-    .tab-btn {
-      background: #161b22;
-      border: 1px solid #30363d;
-      color: #8b949e;
-      padding: 7px 12px;
-      border-radius: 6px;
-      font-family: inherit;
-      font-size: 12.5px;
-      font-weight: 500;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      transition: all 0.15s ease;
-    }
-    .tab-btn:hover {
-      background: #21262d;
-      color: #c9d1d9;
-      border-color: #484f58;
-    }
-    .tab-btn.active {
-      background: #1f2937;
-      color: #58a6ff;
-      border-color: #58a6ff;
-      box-shadow: 0 0 8px rgba(88, 166, 255, 0.25);
-    }
-    .tab-content {
-      display: none;
+    .lute-card {
       background: #0d1117;
       border: 1px solid #30363d;
       border-radius: 8px;
-      padding: 16px;
+      padding: 20px;
       margin-bottom: 16px;
-      animation: fadeIn 0.2s ease;
-    }
-    .tab-content.active { display: block; }
-    .qr-container {
       display: flex;
       flex-direction: column;
-      align-items: center;
-      gap: 12px;
-      margin: 10px 0;
+      gap: 14px;
     }
-    .qr-box {
-      background: #ffffff;
-      padding: 10px;
-      border-radius: 8px;
-      display: inline-block;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
-    }
-    .qr-box img {
-      width: 160px;
-      height: 160px;
-      display: block;
-    }
-    .input-shell {
+    .lute-header {
       display: flex;
       align-items: center;
-      background: #090d13;
-      border: 1px solid #30363d;
-      border-radius: 6px;
-      padding: 0 12px;
-      margin-top: 8px;
-      margin-bottom: 12px;
-      transition: border-color 0.2s, box-shadow 0.2s;
+      gap: 10px;
     }
-    .input-shell:focus-within {
-      border-color: #58a6ff;
-      box-shadow: 0 0 0 2px rgba(88, 166, 255, 0.2);
+    .lute-icon {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: #238636;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
     }
-    .input-chevron {
-      color: #34d399;
-      font-weight: bold;
-      font-size: 13px;
-      margin-right: 8px;
-      user-select: none;
-    }
-    input[type="text"], input[type="password"] {
-      width: 100%;
-      padding: 10px 0;
-      background: transparent;
-      border: none;
-      outline: none;
+    .lute-title {
+      font-size: 15px;
+      font-weight: 600;
       color: #f0f6fc;
-      font-family: inherit;
-      font-size: 13px;
     }
-    input::placeholder { color: #484f58; }
+    .lute-subtitle {
+      font-size: 12.5px;
+      color: #8b949e;
+    }
     .btn-action {
       width: 100%;
-      padding: 10px 16px;
+      padding: 13px 18px;
       background: #238636;
       border: 1px solid #2ea043;
       color: #ffffff;
       border-radius: 6px;
       font-family: inherit;
-      font-size: 13px;
+      font-size: 14px;
       font-weight: 600;
       cursor: pointer;
       display: flex;
       align-items: center;
       justify-content: center;
-      gap: 8px;
+      gap: 10px;
       transition: all 0.15s ease;
       text-decoration: none;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
     }
     .btn-action:hover:not(:disabled) {
       background: #2ea043;
-      box-shadow: 0 4px 12px rgba(46, 160, 67, 0.35);
+      box-shadow: 0 4px 14px rgba(46, 160, 67, 0.4);
     }
     .btn-action:active:not(:disabled) {
       background: #238636;
       transform: translateY(1px);
     }
     .btn-action:disabled { opacity: 0.65; cursor: not-allowed; }
-    .btn-secondary {
-      background: #21262d;
-      border: 1px solid #363b42;
-      color: #c9d1d9;
-    }
-    .btn-secondary:hover:not(:disabled) {
-      background: #30363d;
-      border-color: #8b949e;
-      box-shadow: none;
-    }
     .status-msg {
-      margin-top: 12px;
       font-size: 12.5px;
-      padding: 8px 12px;
+      padding: 10px 14px;
       border-radius: 6px;
       display: none;
+      line-height: 1.45;
     }
     .status-info {
       background: rgba(56, 139, 253, 0.12);
@@ -448,20 +372,6 @@ export function renderPaymentPage(params: {
       from { opacity: 0; transform: translateY(4px); }
       to { opacity: 1; transform: translateY(0); }
     }
-    .wallet-desc {
-      font-size: 12.5px;
-      color: #8b949e;
-      margin-bottom: 12px;
-      line-height: 1.45;
-    }
-    .badge-net {
-      background: #232731;
-      border: 1px solid #444c56;
-      color: #93c5fd;
-      padding: 1px 6px;
-      border-radius: 4px;
-      font-size: 11px;
-    }
   </style>
 </head>
 <body>
@@ -473,7 +383,7 @@ export function renderPaymentPage(params: {
         <span class="traffic-btn btn-zoom"></span>
       </div>
       <div class="titlebar-center">
-        <span>modu — x402 payment — 80×24</span>
+        <span>modu — Lute Payment Approval — 80×24</span>
       </div>
     </div>
     <div class="terminal-body">
@@ -485,10 +395,10 @@ export function renderPaymentPage(params: {
 
       <div id="paymentFlow">
         <div class="term-heading">
-          <span>⚡</span> Algorand x402 Micropayment
+          <span>⚡</span> Algorand x402 Payment (Lute)
         </div>
         <p class="term-desc">
-          HTTP 402 Payment Required. Connect an Algorand wallet or enter testnet credentials to settle and unlock the API response.
+          HTTP 402 Payment Required. Connect your Lute wallet to approve and sign the micropayment.
         </p>
 
         <div class="session-card">
@@ -514,145 +424,37 @@ export function renderPaymentPage(params: {
           </div>
         </div>
 
-        <!-- Wallet Selection Tabs -->
-        <div class="tabs-container">
-          <button class="tab-btn active" onclick="switchTab('pera')">🟡 Pera</button>
-          <button class="tab-btn" onclick="switchTab('defly')">🟣 Defly</button>
-          <button class="tab-btn" onclick="switchTab('lute')">🟢 Lute</button>
-          <button class="tab-btn" onclick="switchTab('kibisis')">🧩 Kibisis</button>
-          <button class="tab-btn" onclick="switchTab('testnet')">⚡ Testnet Signer</button>
-          <button class="tab-btn" onclick="switchTab('txid')">📋 Paste TxID</button>
-        </div>
-
-        <!-- Tab 1: Pera Wallet -->
-        <div id="tab-pera" class="tab-content active">
-          <p class="wallet-desc">
-            Scan with the Pera Wallet mobile app, or click below to launch Pera Wallet with pre-filled payment parameters.
-          </p>
-          <div class="qr-container">
-            <div class="qr-box">
-              <img src="${qrCodeUrl}" alt="Pera QR Code" />
+        <div class="lute-card">
+          <div class="lute-header">
+            <div class="lute-icon">🟢</div>
+            <div>
+              <div class="lute-title">Lute Wallet</div>
+              <div class="lute-subtitle">Connect your Lute wallet to prompt and sign this transaction</div>
             </div>
-            <a href="${algorandUri}" class="btn-action" target="_blank" rel="noopener">
-              <span>Open in Pera Wallet</span> ↗
-            </a>
           </div>
-          <div style="margin-top:14px;">
-            <p style="font-size:12px; color:#8b949e;">Once confirmed in Pera, paste the transaction ID below:</p>
-            <div class="input-shell">
-              <span class="input-chevron">❯</span>
-              <input type="text" id="peraTxid" placeholder="Paste confirmed Algorand TxID..." spellcheck="false" />
-            </div>
-            <button class="btn-action btn-secondary" onclick="submitTxid('peraTxid')">Confirm Pera Payment</button>
-          </div>
-        </div>
 
-        <!-- Tab 2: Defly Wallet -->
-        <div id="tab-defly" class="tab-content">
-          <p class="wallet-desc">
-            Scan with the Defly Wallet app or open on your device to execute the pre-configured micropayment.
-          </p>
-          <div class="qr-container">
-            <div class="qr-box">
-              <img src="${qrCodeUrl}" alt="Defly QR Code" />
-            </div>
-            <a href="${algorandUri}" class="btn-action" target="_blank" rel="noopener">
-              <span>Open in Defly Wallet</span> ↗
-            </a>
+          <div id="accountCard" style="display:none; background:#111318; border:1px solid #282c34; border-radius:6px; padding:10px 12px; font-size:12.5px;">
+            <span style="color:#8b949e;">Connected Account: </span>
+            <span id="connectedAccountDisplay" style="color:#34d399; font-weight:500;">-</span>
           </div>
-          <div style="margin-top:14px;">
-            <p style="font-size:12px; color:#8b949e;">Once confirmed in Defly, paste the transaction ID below:</p>
-            <div class="input-shell">
-              <span class="input-chevron">❯</span>
-              <input type="text" id="deflyTxid" placeholder="Paste confirmed Algorand TxID..." spellcheck="false" />
-            </div>
-            <button class="btn-action btn-secondary" onclick="submitTxid('deflyTxid')">Confirm Defly Payment</button>
-          </div>
-        </div>
 
-        <!-- Tab 3: Lute Wallet -->
-        <div id="tab-lute" class="tab-content">
-          <p class="wallet-desc">
-            Lute is a web-based Algorand wallet. Open Lute to send <strong>${humanAmount} ${assetName}</strong> to the recipient address with note: <code>modu:${nonce}</code>.
-          </p>
-          <div style="margin-bottom:14px;">
-            <a href="https://lute.app" class="btn-action" target="_blank" rel="noopener">
-              <span>Open Lute Wallet (lute.app)</span> ↗
-            </a>
-          </div>
-          <div style="background:#111318; border:1px solid #282c34; border-radius:6px; padding:10px 12px; margin-bottom:14px; font-size:12px;">
-            <div style="margin-bottom:4px;"><strong style="color:#79c0ff;">Recipient:</strong> <code style="word-break:break-all;">${payTo}</code></div>
-            <div style="margin-bottom:4px;"><strong style="color:#facc15;">Amount:</strong> ${humanAmount} ${assetName}</div>
-            <div><strong style="color:#34d399;">Note (Required):</strong> <code>modu:${nonce}</code></div>
-          </div>
-          <p style="font-size:12px; color:#8b949e;">Once confirmed in Lute, enter the transaction ID:</p>
-          <div class="input-shell">
-            <span class="input-chevron">❯</span>
-            <input type="text" id="luteTxid" placeholder="Paste confirmed Algorand TxID..." spellcheck="false" />
-          </div>
-          <button class="btn-action btn-secondary" onclick="submitTxid('luteTxid')">Confirm Lute Payment</button>
-        </div>
-
-        <!-- Tab 4: Kibisis / Browser Extension -->
-        <div id="tab-kibisis" class="tab-content">
-          <p class="wallet-desc">
-            Connect via standard Algorand browser extension (Kibisis, Defly Web, or compatible ARC-0027 provider).
-          </p>
-          <button id="extConnectBtn" class="btn-action" onclick="connectBrowserWallet()">
-            <span>Connect & Pay with Browser Wallet</span>
+          <button id="luteBtn" class="btn-action">
+            <span>Connect Lute Wallet</span>
           </button>
-          <div id="extStatus" class="status-msg"></div>
-          <div style="margin-top:14px;">
-            <p style="font-size:12px; color:#8b949e;">Or paste transaction ID if signed externally:</p>
-            <div class="input-shell">
-              <span class="input-chevron">❯</span>
-              <input type="text" id="kibisisTxid" placeholder="Paste confirmed Algorand TxID..." spellcheck="false" />
-            </div>
-            <button class="btn-action btn-secondary" onclick="submitTxid('kibisisTxid')">Confirm Payment</button>
-          </div>
-        </div>
 
-        <!-- Tab 5: Testnet Mnemonic Signer (Instant) -->
-        <div id="tab-testnet" class="tab-content">
-          <p class="wallet-desc">
-            Developer 1-Click Payment: Enter your 25-word Algorand Testnet mnemonic or secret key. Transaction is signed locally and broadcast to Algorand Testnet node.
-          </p>
-          <div class="input-shell">
-            <span class="input-chevron">❯</span>
-            <input type="password" id="mnemonicInput" placeholder="Enter 25-word testnet mnemonic..." autocomplete="off" spellcheck="false" />
-          </div>
-          <button id="signPayBtn" class="btn-action" onclick="handleSignAndPay()">
-            <span>⚡ Sign & Settle ${humanAmount} ${assetName}</span>
-          </button>
-          <div id="signerStatus" class="status-msg"></div>
+          <div id="statusMsg" class="status-msg"></div>
         </div>
-
-        <!-- Tab 6: Paste TxID -->
-        <div id="tab-txid" class="tab-content">
-          <p class="wallet-desc">
-            Already submitted payment on Algorand Testnet? Paste your confirmed transaction ID to unlock the endpoint.
-          </p>
-          <div class="input-shell">
-            <span class="input-chevron">❯</span>
-            <input type="text" id="manualTxid" placeholder="e.g. 5VHQPKCJJIUYBGV2ZJACAMEFGBFHPATT6JBIWPYVQ7VZD5XLXZDA" spellcheck="false" />
-          </div>
-          <button class="btn-action" onclick="submitTxid('manualTxid')">
-            <span>Submit Payment Proof</span>
-          </button>
-        </div>
-
-        <div id="globalError" class="status-msg status-error" style="display:none; margin-top:14px;"></div>
       </div>
 
       <!-- Success Screen -->
       <div id="successScreen" class="term-success">
         <div class="success-item">
           <span class="success-check">✓</span>
-          <span>Payment settled on Algorand Testnet!</span>
+          <span>Payment approved and signed in Lute!</span>
         </div>
         <div class="success-item">
           <span class="success-check">✓</span>
-          <span>x402 challenge verified and confirmed.</span>
+          <span>Transaction confirmed on Algorand Testnet.</span>
         </div>
         <div class="session-card" style="margin-top:14px;">
           <div class="session-row">
@@ -665,7 +467,7 @@ export function renderPaymentPage(params: {
           </div>
         </div>
         <div class="success-dim">
-          Your payment proof has been delivered to your CLI session. Response is now streaming in your terminal. You may close this browser tab.
+          Payment confirmed. Response is now streaming in your terminal. You may close this tab.
         </div>
         <div class="process-done">
           [Process completed]
@@ -679,13 +481,114 @@ export function renderPaymentPage(params: {
   </div>
 
   <script>
-    function switchTab(tabName) {
-      document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
-      document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
-      const activeBtn = Array.from(document.querySelectorAll('.tab-btn')).find(b => b.textContent.toLowerCase().includes(tabName));
-      if (activeBtn) activeBtn.classList.add('active');
-      const activeContent = document.getElementById('tab-' + tabName);
-      if (activeContent) activeContent.classList.add('active');
+    // Embedded LuteConnect client
+    const PARAMS = "width=500,height=750,left=" + (100 + window.screenX) + ",top=" + (100 + window.screenY);
+    const BASE_URL = "https://lute.app";
+
+    class LuteConnect {
+      constructor(siteName) {
+        this.siteName = siteName || document.title || "modu";
+        this.forceWeb = false;
+      }
+
+      connect(genesisID) {
+        return new Promise((resolve, reject) => {
+          const useExt = this.forceWeb ? false : !!window.lute;
+          let win;
+          if (useExt) {
+            window.dispatchEvent(new CustomEvent("lute-connect", {
+              detail: { action: "connect", genesisID }
+            }));
+          } else {
+            win = window.open(BASE_URL + "/connect", this.siteName, PARAMS);
+          }
+          const type = useExt ? "connect-response" : "message";
+
+          function messageHandler(event) {
+            if (!useExt && event.origin !== "https://lute.app") return;
+            const data = event.data || event.detail;
+            if (!data) return;
+            switch (data.action) {
+              case "ready":
+                win?.postMessage({ action: "network", genesisID }, "*");
+                break;
+              case "connect":
+                window.removeEventListener(type, messageHandler);
+                resolve(data.addrs);
+                break;
+              case "error":
+                window.removeEventListener(type, messageHandler);
+                reject(new Error(data.message));
+                break;
+              case "close":
+                window.removeEventListener(type, messageHandler);
+                reject(new Error("Operation Cancelled"));
+                break;
+            }
+          }
+          window.addEventListener(type, messageHandler);
+        });
+      }
+
+      signTxns(txns) {
+        return new Promise((resolve, reject) => {
+          const useExt = this.forceWeb ? false : !!window.lute;
+          let win;
+          if (useExt) {
+            window.dispatchEvent(new CustomEvent("lute-connect", {
+              detail: { action: "sign", txns }
+            }));
+          } else {
+            win = window.open(BASE_URL + "/sign", this.siteName, PARAMS);
+          }
+          const type = useExt ? "sign-txns-response" : "message";
+
+          function messageHandler(event) {
+            if (!useExt && event.origin !== "https://lute.app") return;
+            const detail = event.data || event.detail;
+            if (!detail) return;
+            switch (detail.action) {
+              case "ready":
+                win?.postMessage({ action: "sign", txns }, "*");
+                break;
+              case "signed":
+                window.removeEventListener(type, messageHandler);
+                resolve(detail.txns);
+                break;
+              case "error":
+                window.removeEventListener(type, messageHandler);
+                reject(new Error(detail.message || "Signing failed"));
+                break;
+              case "close":
+                window.removeEventListener(type, messageHandler);
+                reject(new Error("User Rejected Request"));
+                break;
+            }
+          }
+          window.addEventListener(type, messageHandler);
+        });
+      }
+    }
+
+    // Two-step state machine:
+    //   STEP 1 click → lute.connect() fires window.open() synchronously ✓
+    //   After connect: fetch prepared txn in background, store it
+    //   STEP 2 click → lute.signTxns() fires window.open() synchronously ✓
+    // Both window.open() calls happen as the FIRST async operation inside a
+    // Promise constructor, directly triggered by a user click — so browsers
+    // never block them.
+
+    const lute = new LuteConnect("modu");
+    let activeAccount = null;
+    let preparedTxnB64 = null;  // stored after step 1 so step 2 can sign immediately
+
+    const btn = document.getElementById('luteBtn');
+    const statusDiv = document.getElementById('statusMsg');
+
+    function setStatus(msg, isError) {
+      statusDiv.style.display = 'block';
+      statusDiv.className = 'status-msg ' + (isError ? 'status-error' : 'status-info');
+      statusDiv.textContent = msg;
     }
 
     function showSuccess(txid) {
@@ -694,107 +597,93 @@ export function renderPaymentPage(params: {
       document.getElementById('successScreen').style.display = 'block';
     }
 
-    async function submitTxid(inputId) {
-      const input = document.getElementById(inputId);
-      const txid = (input ? input.value : '').trim();
-      const errDiv = document.getElementById('globalError');
-      errDiv.style.display = 'none';
-
-      if (!txid) {
-        errDiv.textContent = 'Please enter a valid Algorand transaction ID.';
-        errDiv.style.display = 'block';
-        return;
-      }
-
-      try {
-        const res = await fetch('/api/complete', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ txid })
-        });
-        const data = await res.json();
-        if (res.ok && data.success) {
-          showSuccess(txid);
-        } else {
-          errDiv.textContent = data.error || 'Failed to submit transaction ID';
-          errDiv.style.display = 'block';
-        }
-      } catch (err) {
-        errDiv.textContent = 'Error connecting to local modu CLI server.';
-        errDiv.style.display = 'block';
-      }
-    }
-
-    async function handleSignAndPay() {
-      const mnemonic = document.getElementById('mnemonicInput').value.trim();
-      const btn = document.getElementById('signPayBtn');
-      const statusDiv = document.getElementById('signerStatus');
-      const errDiv = document.getElementById('globalError');
-      errDiv.style.display = 'none';
-
-      if (!mnemonic) {
-        errDiv.textContent = 'Please enter your 25-word testnet mnemonic.';
-        errDiv.style.display = 'block';
-        return;
-      }
-
+    // ── STEP 1: connect ─────────────────────────────────────────────────────
+    // Called synchronously from button click.
+    // lute.connect() fires window.open() inside its Promise constructor —
+    // still within the user-gesture stack frame.
+    function step1Connect() {
       btn.disabled = true;
-      btn.innerHTML = '<span>Signing & broadcasting transaction...</span>';
-      statusDiv.textContent = 'Connecting to Algorand Testnet node...';
-      statusDiv.className = 'status-msg status-info';
+      btn.innerHTML = '<span>Connecting to Lute…</span>';
+      setStatus('Opening Lute — please connect your wallet in the popup…', false);
 
-      try {
-        const res = await fetch('/api/sign-and-pay', {
+      // connectPromise is created synchronously (window.open fires NOW)
+      const connectPromise = lute.connect('testnet-v1.0');
+
+      connectPromise.then(async (addrs) => {
+        if (!addrs || addrs.length === 0) throw new Error('No accounts selected in Lute');
+        activeAccount = addrs[0];
+
+        document.getElementById('connectedAccountDisplay').textContent =
+          activeAccount.slice(0, 10) + '…' + activeAccount.slice(-8);
+        document.getElementById('accountCard').style.display = 'block';
+        setStatus('Connected ✓  Fetching transaction details…', false);
+        btn.innerHTML = '<span>Fetching transaction…</span>';
+
+        // Fetch the unsigned txn in the background while user waits
+        const prepRes = await fetch('/api/prepare-txn', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ mnemonic })
+          body: JSON.stringify({ from: activeAccount })
         });
-        const data = await res.json();
+        const prepData = await prepRes.json();
+        if (!prepRes.ok || !prepData.txn) throw new Error(prepData.error || 'Failed to prepare transaction');
+        preparedTxnB64 = prepData.txn;
 
-        if (res.ok && data.success && data.txId) {
-          statusDiv.textContent = 'Confirmed on testnet! TxID: ' + data.txId;
-          showSuccess(data.txId);
-        } else {
-          btn.disabled = false;
-          btn.innerHTML = '<span>⚡ Sign & Settle ${humanAmount} ${assetName}</span>';
-          statusDiv.textContent = 'Error: ' + (data.error || 'Transaction failed');
-          statusDiv.className = 'status-msg status-error';
-        }
-      } catch (err) {
+        // Transition to step 2 — rewire the button
         btn.disabled = false;
-        btn.innerHTML = '<span>⚡ Sign & Settle ${humanAmount} ${assetName}</span>';
-        statusDiv.textContent = 'Network error communicating with local CLI server.';
-        statusDiv.className = 'status-msg status-error';
-      }
+        btn.innerHTML = '<span>⚡ Sign & Pay ${humanAmount} ${assetName} in Lute</span>';
+        btn.onclick = step2Sign;
+        setStatus('Ready to pay. Click the button to open Lute and sign the transaction.', false);
+
+      }).catch((err) => {
+        btn.disabled = false;
+        btn.innerHTML = '<span>Connect Lute Wallet</span>';
+        setStatus('Error: ' + (err.message || 'Connect failed'), true);
+      });
     }
 
-    async function connectBrowserWallet() {
-      const statusDiv = document.getElementById('extStatus');
-      statusDiv.style.display = 'block';
-      statusDiv.className = 'status-msg status-info';
-
-      if (!window.algorand) {
-        statusDiv.textContent = 'No Algorand extension (Kibisis, Defly) detected. Use Pera, Lute, or the Testnet Signer.';
-        statusDiv.className = 'status-msg status-error';
+    // ── STEP 2: sign ────────────────────────────────────────────────────────
+    // Called synchronously from the "Sign & Pay" button click.
+    // lute.signTxns() fires window.open() inside its Promise constructor —
+    // still within the user-gesture stack frame.
+    function step2Sign() {
+      if (!preparedTxnB64) {
+        setStatus('Transaction not ready yet, please wait…', true);
         return;
       }
+      btn.disabled = true;
+      btn.innerHTML = '<span>Signing in Lute…</span>';
+      setStatus('Opening Lute — please approve the transaction in the popup…', false);
 
-      try {
-        statusDiv.textContent = 'Requesting account authorization from browser wallet...';
-        const accounts = await window.algorand.enable();
-        if (!accounts || accounts.length === 0) {
-          throw new Error('No accounts authorized');
-        }
-        const sender = accounts[0].address || accounts[0];
-        statusDiv.textContent = 'Connected: ' + sender.slice(0, 8) + '... Please confirm transaction in your wallet.';
-        
-        // Let user know to submit txid or if provider supports signing
-        statusDiv.textContent = 'Connected! Please sign the payment with note: modu:${nonce} and enter the TxID below.';
-      } catch (err) {
-        statusDiv.textContent = err.message || 'Browser wallet connection failed';
-        statusDiv.className = 'status-msg status-error';
-      }
+      // signPromise is created synchronously (window.open fires NOW)
+      const signPromise = lute.signTxns([{ txn: preparedTxnB64 }]);
+
+      signPromise.then(async (signedTxns) => {
+        if (!signedTxns || !signedTxns[0]) throw new Error('Transaction was not signed in Lute');
+
+        btn.innerHTML = '<span>Broadcasting…</span>';
+        setStatus('Transaction signed ✓  Broadcasting to Algorand Testnet…', false);
+
+        const broadcastRes = await fetch('/api/broadcast', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ signedTxn: Array.from(signedTxns[0]) })
+        });
+        const broadcastData = await broadcastRes.json();
+        if (!broadcastRes.ok || !broadcastData.txId) throw new Error(broadcastData.error || 'Broadcast failed');
+
+        setStatus('Confirmed on Testnet ✓  TxID: ' + broadcastData.txId, false);
+        showSuccess(broadcastData.txId);
+
+      }).catch((err) => {
+        btn.disabled = false;
+        btn.innerHTML = '<span>⚡ Sign & Pay ${humanAmount} ${assetName} in Lute</span>';
+        setStatus('Error: ' + (err.message || 'Sign failed'), true);
+      });
     }
+
+    // Wire initial click to step 1
+    btn.onclick = step1Connect;
   </script>
 </body>
 </html>`;
@@ -939,6 +828,90 @@ export async function getCommand(url: string, options: GetOptions = {}): Promise
       return;
     }
 
+    if (pathname === '/api/prepare-txn' && req.method === 'POST') {
+      let body = '';
+      req.on('data', chunk => (body += chunk));
+      req.on('end', async () => {
+        try {
+          const parsed = JSON.parse(body || '{}');
+          const sender = parsed.from?.trim();
+          if (!sender || !algosdk.isValidAddress(sender)) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Valid sender Algorand address is required' }));
+            return;
+          }
+
+          const algodClient = new algosdk.Algodv2('', 'https://testnet-api.algonode.cloud', 443);
+          const params = await algodClient.getTransactionParams().do();
+          const noteBytes = encodeNote(nonce);
+
+          let txn: algosdk.Transaction;
+          if (isAlgo) {
+            txn = algosdk.makePaymentTxnWithSuggestedParamsFromObject({
+              from: sender,
+              to: payTo,
+              amount: BigInt(amountMicro),
+              note: noteBytes,
+              suggestedParams: params,
+            });
+          } else {
+            txn = algosdk.makeAssetTransferTxnWithSuggestedParamsFromObject({
+              from: sender,
+              to: payTo,
+              assetIndex: Number(assetId),
+              amount: BigInt(amountMicro),
+              note: noteBytes,
+              suggestedParams: params,
+            });
+          }
+
+          const txnBase64 = Buffer.from(txn.toByte()).toString('base64');
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: true, txn: txnBase64 }));
+        } catch (err: any) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: err.message || 'Failed to prepare transaction' }));
+        }
+      });
+      return;
+    }
+
+    if (pathname === '/api/broadcast' && req.method === 'POST') {
+      let body = '';
+      req.on('data', chunk => (body += chunk));
+      req.on('end', async () => {
+        try {
+          const parsed = JSON.parse(body || '{}');
+          let signedBytes: Uint8Array;
+          if (Array.isArray(parsed.signedTxn)) {
+            signedBytes = new Uint8Array(parsed.signedTxn);
+          } else if (typeof parsed.signedTxn === 'string') {
+            signedBytes = Buffer.from(parsed.signedTxn, 'base64');
+          } else {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Signed transaction is required' }));
+            return;
+          }
+
+          const algodClient = new algosdk.Algodv2('', 'https://testnet-api.algonode.cloud', 443);
+          const sendRes = await algodClient.sendRawTransaction(signedBytes).do();
+          const txId = sendRes.txId || sendRes.txid;
+
+          // Wait for confirmation on Algorand testnet
+          await algosdk.waitForConfirmation(algodClient, txId, 5);
+
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: true, txId }));
+
+          txidPromiseResolve(txId);
+        } catch (err: any) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: err.message || 'Transaction broadcast failed' }));
+        }
+      });
+      return;
+    }
+
     if (pathname === '/api/complete' && req.method === 'POST') {
       let body = '';
       req.on('data', chunk => (body += chunk));
@@ -962,63 +935,6 @@ export async function getCommand(url: string, options: GetOptions = {}): Promise
       return;
     }
 
-    if (pathname === '/api/sign-and-pay' && req.method === 'POST') {
-      let body = '';
-      req.on('data', chunk => (body += chunk));
-      req.on('end', async () => {
-        try {
-          const parsed = JSON.parse(body || '{}');
-          const mnemonic = parsed.mnemonic?.trim();
-          if (!mnemonic) {
-            res.writeHead(400, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ error: 'Mnemonic is required' }));
-            return;
-          }
-
-          const account = algosdk.mnemonicToSecretKey(mnemonic);
-          const algodClient = new algosdk.Algodv2('', 'https://testnet-api.algonode.cloud', 443);
-          const params = await algodClient.getTransactionParams().do();
-          const noteBytes = encodeNote(nonce);
-
-          let txn: algosdk.Transaction;
-          if (isAlgo) {
-            txn = algosdk.makePaymentTxnWithSuggestedParamsFromObject({
-              from: account.addr,
-              to: payTo,
-              amount: BigInt(amountMicro),
-              note: noteBytes,
-              suggestedParams: params,
-            });
-          } else {
-            txn = algosdk.makeAssetTransferTxnWithSuggestedParamsFromObject({
-              from: account.addr,
-              to: payTo,
-              assetIndex: Number(assetId),
-              amount: BigInt(amountMicro),
-              note: noteBytes,
-              suggestedParams: params,
-            });
-          }
-
-          const signedTxn = txn.signTxn(account.sk);
-          const sendRes = await algodClient.sendRawTransaction(signedTxn).do();
-          const txId = sendRes.txId || sendRes.txid;
-
-          // Wait for confirmation on Algorand testnet
-          await algosdk.waitForConfirmation(algodClient, txId, 5);
-
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ success: true, txId }));
-
-          txidPromiseResolve(txId);
-        } catch (err: any) {
-          res.writeHead(400, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ error: err.message || 'Transaction signing failed' }));
-        }
-      });
-      return;
-    }
-
     res.writeHead(404, { 'Content-Type': 'text/plain' });
     res.end('Not Found');
   });
@@ -1035,12 +951,12 @@ export async function getCommand(url: string, options: GetOptions = {}): Promise
   logInfo('GET', 'Payment server listening', { port, payUrl });
 
   // Terminal prompt and status
-  console.log(chalk.bold.cyan('\n⚡ Settle Micropayment to Proceed'));
+  console.log(chalk.bold.cyan('\n⚡ Settle Micropayment via Lute Wallet'));
   console.log(`${chalk.bold('Amount:')}      ${chalk.yellow(`${humanAmount} ${assetName}`)}`);
   console.log(`${chalk.bold('Recipient:')}   ${chalk.green(payTo)}`);
   console.log(`${chalk.bold('Nonce:')}       ${chalk.dim(nonce)}`);
   console.log(`${chalk.bold('Network:')}     ${chalk.dim(network)}`);
-  console.log(`\nOpening browser for wallet payment: ${chalk.underline.blue(payUrl)}`);
+  console.log(`\nOpening browser for Lute payment approval: ${chalk.underline.blue(payUrl)}`);
 
   // Open browser unless disabled (e.g. in headless tests)
   if (options.autoOpen !== false) {
@@ -1052,7 +968,7 @@ export async function getCommand(url: string, options: GetOptions = {}): Promise
   }
 
   process.stdout.write(
-    chalk.dim('Waiting for payment in browser (or paste confirmed Algorand TxID here)... ')
+    chalk.dim('Waiting for payment approval in Lute (or paste confirmed Algorand TxID here)... ')
   );
 
   // Setup stdin readline for manual TxID paste in terminal if running interactively
