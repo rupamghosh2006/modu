@@ -142,7 +142,27 @@ export class MemoryDataStore implements DataStore {
     }
   }
 
-  private saveToDisk(): void {
+  private saveTimer: NodeJS.Timeout | null = null;
+
+  private saveToDisk(immediate = false): void {
+    if (!this.persistPath) return;
+    if (immediate) {
+      if (this.saveTimer) {
+        clearTimeout(this.saveTimer);
+        this.saveTimer = null;
+      }
+      this.flushToDisk();
+      return;
+    }
+    if (this.saveTimer) return;
+    this.saveTimer = setTimeout(() => {
+      this.saveTimer = null;
+      this.flushToDisk();
+    }, 150);
+    this.saveTimer.unref?.();
+  }
+
+  public flushToDisk(): void {
     if (!this.persistPath) return;
     try {
       const dir = path.dirname(this.persistPath);

@@ -1,6 +1,7 @@
 import chalk from 'chalk';
 import Table from 'cli-table3';
-import { loadConfig, getControlPlaneUrl } from '../config.js';
+import { loadConfig, getControlPlaneUrl, getProxyUrl } from '../config.js';
+import { logInfo, logError } from '../logger.js';
 import { EndpointSummary } from '../shared.js';
 
 export interface ListOptions {
@@ -11,7 +12,8 @@ export interface ListOptions {
 export async function listCommand(options: ListOptions = {}): Promise<void> {
   const config = loadConfig(options.configPath);
   if (!config.apiKey) {
-    const errorMsg = 'Not authenticated. Please run `modu login` first.';
+    const errorMsg = 'Not authenticated. Please run `modu config` first.';
+    logError('LIST', 'Authentication required', { configPath: options.configPath });
     if (options.json) {
       console.log(JSON.stringify({ error: errorMsg }));
     } else {
@@ -22,8 +24,10 @@ export async function listCommand(options: ListOptions = {}): Promise<void> {
   }
 
   const controlPlaneUrl = getControlPlaneUrl(config);
+  const proxyBaseUrl = getProxyUrl(config);
 
   try {
+    logInfo('LIST', 'Fetching registered endpoints', { controlPlaneUrl });
     const res = await fetch(`${controlPlaneUrl}/api/endpoints`, {
       headers: {
         Authorization: `Bearer ${config.apiKey}`,
@@ -35,7 +39,18 @@ export async function listCommand(options: ListOptions = {}): Promise<void> {
       throw new Error(errBody.error || `Control plane returned ${res.status}`);
     }
 
-    const endpoints = (await res.json()) as EndpointSummary[];
+    const rawEndpoints = (await res.json()) as EndpointSummary[];
+
+    // Ensure proxyUrl uses the configured proxy URL rather than localhost:4000
+    const endpoints = rawEndpoints.map((ep) => {
+      let finalProxyUrl = ep.proxyUrl;
+      if (ep.proxyUrl?.includes('localhost:4000') || !ep.proxyUrl) {
+        finalProxyUrl = `${proxyBaseUrl}/p/${ep.slug}`;
+      }
+      return { ...ep, proxyUrl: finalProxyUrl };
+    });
+
+    logInfo('LIST', `Retrieved ${endpoints.length} endpoints`);
 
     if (options.json) {
       console.log(JSON.stringify(endpoints));
@@ -44,7 +59,7 @@ export async function listCommand(options: ListOptions = {}): Promise<void> {
 
     if (endpoints.length === 0) {
       console.log(chalk.yellow('No endpoints registered yet.'));
-      console.log(`Register one with: ${chalk.cyan('modu register --url <url> --price <amount> --asset USDC')}`);
+      console.log(`Register one with: ${chalk.cyan('npx modu register')}`);
       return;
     }
 
@@ -77,6 +92,7 @@ export async function listCommand(options: ListOptions = {}): Promise<void> {
     console.log(table.toString());
     console.log('');
   } catch (err: any) {
+    logError('LIST', 'Failed to list endpoints', err);
     if (options.json) {
       console.log(JSON.stringify({ error: err.message }));
     } else {

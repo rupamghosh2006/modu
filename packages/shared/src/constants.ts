@@ -5,8 +5,8 @@ export const ALGORAND_ALGO_ASSET_ID = '0';
 export const DEFAULT_NETWORK = 'algorand-testnet';
 export const DEFAULT_INDEXER_URL = 'https://testnet-idx.algonode.cloud';
 
-export const DEFAULT_CONTROL_PLANE_URL = 'http://localhost:3000';
-export const DEFAULT_PROXY_URL = 'http://localhost:4000';
+export const DEFAULT_CONTROL_PLANE_URL = 'https://modu-to68.onrender.com';
+export const DEFAULT_PROXY_URL = 'https://modu-proxy.onrender.com';
 
 export const DECIMALS: Record<string, number> = {
   USDC: 6,

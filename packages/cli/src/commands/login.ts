@@ -1,6 +1,7 @@
 import chalk from 'chalk';
 import open from 'open';
 import { loadConfig, saveConfig, getControlPlaneUrl } from '../config.js';
+import { logInfo, logWarn, logError } from '../logger.js';
 
 export interface LoginOptions {
   json?: boolean;
@@ -14,6 +15,8 @@ export async function loginCommand(options: LoginOptions = {}): Promise<void> {
   const config = loadConfig(options.configPath);
   const controlPlaneUrl = getControlPlaneUrl(config);
 
+  logInfo('LOGIN', 'Starting login command', { controlPlaneUrl });
+
   // 1. Request CLI token from control plane
   let tokenRes: { token: string; authUrl: string; pollUrl: string };
   try {
@@ -24,7 +27,9 @@ export async function loginCommand(options: LoginOptions = {}): Promise<void> {
       throw new Error(`Failed to request CLI token: ${res.status} ${res.statusText}`);
     }
     tokenRes = (await res.json()) as any;
+    logInfo('LOGIN', 'CLI token issued', { pollUrl: tokenRes.pollUrl });
   } catch (err: any) {
+    logError('LOGIN', 'Failed to request CLI token', err);
     if (options.json) {
       console.log(JSON.stringify({ error: err.message }));
     } else {
@@ -80,6 +85,7 @@ export async function loginCommand(options: LoginOptions = {}): Promise<void> {
           },
           options.configPath
         );
+        logInfo('LOGIN', 'CLI session claimed and API key saved');
 
         if (options.json) {
           console.log(
@@ -95,17 +101,18 @@ export async function loginCommand(options: LoginOptions = {}): Promise<void> {
           if (pollData.payoutAddress) {
             console.log(`Payout address: ${chalk.cyan(pollData.payoutAddress)}`);
           } else {
-            console.log(chalk.yellow('Next step: connect your payout address with `modu wallet connect <address>`'));
+            console.log(chalk.yellow('Next step: configure your payout address with `modu config`'));
           }
         }
         return;
       }
 
       if (pollData.status === 'expired') {
-        throw new Error('CLI login token expired. Please run `modu login` again.');
+        throw new Error('CLI login token expired. Please run `modu config` again.');
       }
     } catch (err: any) {
       if (err.message.includes('expired')) {
+        logError('LOGIN', 'CLI token expired', err);
         if (options.json) {
           console.log(JSON.stringify({ error: err.message }));
         } else {
@@ -118,6 +125,7 @@ export async function loginCommand(options: LoginOptions = {}): Promise<void> {
   }
 
   const timeoutMsg = 'Authentication timed out. Please try again.';
+  logError('LOGIN', timeoutMsg);
   if (options.json) {
     console.log(JSON.stringify({ error: timeoutMsg }));
   } else {

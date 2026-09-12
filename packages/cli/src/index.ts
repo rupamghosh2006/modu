@@ -1,4 +1,5 @@
 import { Command } from 'commander';
+import { configCommand } from './commands/config.js';
 import { loginCommand } from './commands/login.js';
 import { walletCreateCommand, walletConnectCommand } from './commands/wallet.js';
 import { registerCommand } from './commands/register.js';
@@ -16,7 +17,24 @@ export function createProgram(): Command {
     .version('0.1.0')
     .option('--json', 'Output results as JSON for scriptability');
 
-  // modu login
+  // modu config [address]
+  program
+    .command('config [address]')
+    .description('Configure authentication and Algorand payout wallet destination')
+    .option('--address <address>', 'Algorand payout destination address')
+    .option('--relogin', 'Force re-authentication in browser')
+    .option('--json', 'Output result in JSON format')
+    .action(async (address?: string, opts?: any, cmd?: any) => {
+      const commandObj = cmd || opts;
+      const isJson = opts?.json || commandObj?.optsWithGlobals?.()?.json;
+      await configCommand(address, {
+        address: opts?.address,
+        relogin: opts?.relogin,
+        json: isJson,
+      });
+    });
+
+  // modu login (legacy shortcut - now also part of `modu config`)
   program
     .command('login')
     .description('Authenticate CLI with your modu developer account via browser')
@@ -47,14 +65,15 @@ export function createProgram(): Command {
       await walletConnectCommand(address, { json: isJson });
     });
 
-  // modu register --url <url> --price <amount> --asset <USDC|ALGO> [--path <slug>]
+  // modu register [--url <url>] [--price <amount>] [--asset <USDC|ALGO>] [--path <slug>]
   program
     .command('register')
-    .description('Register and monetize an HTTP origin endpoint with x402 micropayments')
-    .requiredOption('--url <origin-url>', 'The origin URL to proxy (e.g. https://my-api.com/v1/generate)')
-    .requiredOption('--price <amount>', 'Price per request (e.g. 0.01)')
-    .requiredOption('--asset <USDC|ALGO>', 'Payment asset (USDC or ALGO)')
-    .option('--path <slug>', 'Custom proxy path slug (e.g. "image-gen")')
+    .alias('rergister')
+    .description('Register and monetize an HTTP origin endpoint with x402 micropayments (prompts interactively if flags omitted)')
+    .option('--url <origin-url>', 'The origin URL to proxy (e.g. https://my-api.com/v1/generate)')
+    .option('--price <amount>', 'Price per request in tokens (e.g. 0.001)')
+    .option('--asset <USDC|ALGO>', 'Payment asset (USDC or ALGO)')
+    .option('--path <slug>', 'Custom proxy path slug (e.g. "my-endpoint")')
     .option('--json', 'Output result in JSON format')
     .action(async (opts, cmd) => {
       const isJson = opts.json || cmd.optsWithGlobals().json;

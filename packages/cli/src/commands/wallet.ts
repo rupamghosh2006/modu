@@ -1,6 +1,7 @@
 import algosdk from 'algosdk';
 import chalk from 'chalk';
 import { loadConfig, saveConfig, getControlPlaneUrl } from '../config.js';
+import { logInfo, logError } from '../logger.js';
 
 export interface WalletCreateOptions {
   json?: boolean;
@@ -16,6 +17,8 @@ export async function walletCreateCommand(options: WalletCreateOptions = {}): Pr
   const account = algosdk.generateAccount();
   const mnemonic = algosdk.secretKeyToMnemonic(account.sk);
   const address = account.addr;
+
+  logInfo('WALLET', 'Generated new Algorand wallet', { address });
 
   if (options.json) {
     console.log(
@@ -38,7 +41,7 @@ export async function walletCreateCommand(options: WalletCreateOptions = {}): Pr
       )
   );
   console.log(`To set this wallet as your endpoint payout destination, run:`);
-  console.log(`  ${chalk.cyan(`modu wallet connect ${address}`)}\n`);
+  console.log(`  ${chalk.cyan(`modu config ${address}`)}\n`);
 }
 
 export async function walletConnectCommand(
@@ -47,9 +50,12 @@ export async function walletConnectCommand(
 ): Promise<void> {
   const cleanAddress = address ? address.trim() : '';
 
+  logInfo('WALLET', 'Attempting to connect payout address', { address: cleanAddress });
+
   // Validate address checksum locally using algosdk
   if (!cleanAddress || !algosdk.isValidAddress(cleanAddress)) {
     const errorMsg = `Invalid Algorand address checksum: "${address}"`;
+    logError('WALLET', errorMsg);
     if (options.json) {
       console.log(JSON.stringify({ error: errorMsg }));
     } else {
@@ -61,7 +67,8 @@ export async function walletConnectCommand(
 
   const config = loadConfig(options.configPath);
   if (!config.apiKey) {
-    const errorMsg = 'Not authenticated. Please run `modu login` first.';
+    const errorMsg = 'Not authenticated. Please run `modu config` first.';
+    logError('WALLET', errorMsg);
     if (options.json) {
       console.log(JSON.stringify({ error: errorMsg }));
     } else {
@@ -90,6 +97,7 @@ export async function walletConnectCommand(
 
     // Save payout address in local config
     saveConfig({ payoutAddress: cleanAddress }, options.configPath);
+    logInfo('WALLET', 'Payout address connected successfully', { address: cleanAddress });
 
     if (options.json) {
       console.log(
@@ -103,6 +111,7 @@ export async function walletConnectCommand(
       console.log(`All x402 endpoint payments will settle directly to: ${chalk.cyan(cleanAddress)}`);
     }
   } catch (err: any) {
+    logError('WALLET', 'Failed to connect payout address', err);
     if (options.json) {
       console.log(JSON.stringify({ error: err.message }));
     } else {

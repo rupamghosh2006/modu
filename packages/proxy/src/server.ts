@@ -51,16 +51,40 @@ export function buildProxyServer(options: ProxyServerOptions = {}): FastifyInsta
 
   app.register(cors, { origin: true });
 
-  // Resolve endpoint from control plane or direct resolver
+  // In-memory endpoint cache to eliminate roundtrip latency to control-plane
+  interface CachedEndpoint {
+    data: any;
+    expiresAt: number;
+  }
+  const endpointCache = new Map<string, CachedEndpoint>();
+  const ENDPOINT_CACHE_TTL_MS = 10_000; // 10 seconds TTL
+
+  // Resolve endpoint from control plane or direct resolver (cached)
   async function getEndpoint(identifier: string) {
     if (options.endpointResolver) {
       return await options.endpointResolver(identifier);
     }
+    const now = Date.now();
+    const cached = endpointCache.get(identifier);
+    if (cached && cached.expiresAt > now) {
+      return cached.data;
+    }
+
     try {
       const res = await fetch(`${controlPlaneUrl}/api/internal/endpoints/${encodeURIComponent(identifier)}`);
-      if (res.status === 404) return null;
+      if (res.status === 404) {
+        endpointCache.set(identifier, { data: null, expiresAt: now + 3_000 });
+        return null;
+      }
       if (!res.ok) throw new Error(`Control plane error: ${res.status}`);
-      return await res.json();
+      const data = await res.json();
+      
+      // Keep cache size bounded
+      if (endpointCache.size > 2000) {
+        endpointCache.clear();
+      }
+      endpointCache.set(identifier, { data, expiresAt: now + ENDPOINT_CACHE_TTL_MS });
+      return data;
     } catch {
       return null;
     }
