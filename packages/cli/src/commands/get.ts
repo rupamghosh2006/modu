@@ -481,241 +481,287 @@ export function renderPaymentPage(params: {
   </div>
 
   <script>
-  // Entire script wrapped in IIFE so MetaMask/SES lockdown cannot conflict
-  // with our const/class declarations at the top-level global scope.
   (function() {
     'use strict';
+    console.log('[modu] Payment script loaded');
 
-    // ─── LuteConnect (embedded) ────────────────────────────────────────────
-    var BASE_URL = "https://lute.app";
+    var BASE_URL = 'https://lute.app';
 
     function getPopupParams() {
-      return "width=500,height=750,left=" + (Math.round(window.screenX) + 100) +
-             ",top=" + (Math.round(window.screenY) + 100);
+      var x = (typeof window.screenX === 'number' ? window.screenX : 100);
+      var y = (typeof window.screenY === 'number' ? window.screenY : 100);
+      return 'width=500,height=750,left=' + (x + 100) + ',top=' + (y + 100);
     }
 
-    function LuteConnect(siteName) {
-      this.siteName = siteName || "modu";
+    class LuteConnect {
+      constructor(siteName) {
+        this.siteName = siteName || 'modu';
+      }
+
+      connect(genesisID) {
+        var self = this;
+        return new Promise(function(resolve, reject) {
+          if (window.lute) {
+            console.log('[modu] Using Lute extension for connect');
+            window.dispatchEvent(new CustomEvent('lute-connect', {
+              detail: { action: 'connect', genesisID: genesisID }
+            }));
+            function extHandler(e) {
+              window.removeEventListener('connect-response', extHandler);
+              var d = e.detail;
+              if (!d) return reject(new Error('No response from Lute extension'));
+              if (d.action === 'connect') resolve(d.addrs);
+              else if (d.action === 'error') reject(new Error(d.message || 'Lute extension error'));
+              else if (d.action === 'close') reject(new Error('Operation Cancelled'));
+            }
+            window.addEventListener('connect-response', extHandler);
+            return;
+          }
+
+          console.log('[modu] Opening Lute web popup');
+          var win = window.open(BASE_URL + '/connect', self.siteName, getPopupParams());
+          if (!win || win.closed || typeof win.closed === 'undefined') {
+            console.warn('[modu] Popup was blocked by browser');
+            return reject(new Error('POPUP_BLOCKED'));
+          }
+
+          function popupHandler(event) {
+            if (event.origin !== 'https://lute.app') return;
+            var data = event.data;
+            if (!data) return;
+            console.log('[modu] Lute web message received:', data.action);
+            if (data.action === 'ready') {
+              win.postMessage({ action: 'network', genesisID: genesisID }, '*');
+            } else if (data.action === 'connect') {
+              window.removeEventListener('message', popupHandler);
+              resolve(data.addrs);
+            } else if (data.action === 'error') {
+              window.removeEventListener('message', popupHandler);
+              reject(new Error(data.message || 'Connect failed'));
+            } else if (data.action === 'close') {
+              window.removeEventListener('message', popupHandler);
+              reject(new Error('Operation Cancelled'));
+            }
+          }
+          window.addEventListener('message', popupHandler);
+        });
+      }
+
+      signTxns(txns) {
+        var self = this;
+        return new Promise(function(resolve, reject) {
+          if (window.lute) {
+            console.log('[modu] Using Lute extension for sign');
+            window.dispatchEvent(new CustomEvent('lute-connect', {
+              detail: { action: 'sign', txns: txns }
+            }));
+            function extHandler(e) {
+              window.removeEventListener('sign-txns-response', extHandler);
+              var d = e.detail;
+              if (!d) return reject(new Error('No response from Lute extension'));
+              if (d.action === 'signed') resolve(d.txns);
+              else if (d.action === 'error') reject(new Error(d.message || 'Signing failed'));
+              else if (d.action === 'close') reject(new Error('User Rejected Request'));
+            }
+            window.addEventListener('sign-txns-response', extHandler);
+            return;
+          }
+
+          console.log('[modu] Opening Lute sign popup');
+          var win = window.open(BASE_URL + '/sign', self.siteName, getPopupParams());
+          if (!win || win.closed || typeof win.closed === 'undefined') {
+            console.warn('[modu] Popup was blocked by browser');
+            return reject(new Error('POPUP_BLOCKED'));
+          }
+
+          function popupHandler(event) {
+            if (event.origin !== 'https://lute.app') return;
+            var detail = event.data;
+            if (!detail) return;
+            console.log('[modu] Lute sign message received:', detail.action);
+            if (detail.action === 'ready') {
+              win.postMessage({ action: 'sign', txns: txns }, '*');
+            } else if (detail.action === 'signed') {
+              window.removeEventListener('message', popupHandler);
+              resolve(detail.txns);
+            } else if (detail.action === 'error') {
+              window.removeEventListener('message', popupHandler);
+              reject(new Error(detail.message || 'Signing failed'));
+            } else if (detail.action === 'close') {
+              window.removeEventListener('message', popupHandler);
+              reject(new Error('User Rejected Request'));
+            }
+          }
+          window.addEventListener('message', popupHandler);
+        });
+      }
     }
 
-    LuteConnect.prototype.connect = function(genesisID) {
-      var self = this;
-      return new Promise(function(resolve, reject) {
-        if (window.lute) {
-          window.dispatchEvent(new CustomEvent("lute-connect", {
-            detail: { action: "connect", genesisID: genesisID }
-          }));
-          function extHandler(e) {
-            window.removeEventListener("connect-response", extHandler);
-            var d = e.detail;
-            if (!d) return reject(new Error("No response from Lute extension"));
-            if (d.action === "connect") resolve(d.addrs);
-            else if (d.action === "error") reject(new Error(d.message));
-            else if (d.action === "close") reject(new Error("Operation Cancelled"));
-          }
-          window.addEventListener("connect-response", extHandler);
-          return;
-        }
-        var win = window.open(BASE_URL + "/connect", self.siteName, getPopupParams());
-        if (!win || win.closed || typeof win.closed === "undefined") {
-          return reject(new Error("POPUP_BLOCKED"));
-        }
-        function popupHandler(event) {
-          if (event.origin !== "https://lute.app") return;
-          var data = event.data;
-          if (!data) return;
-          if (data.action === "ready") {
-            win.postMessage({ action: "network", genesisID: genesisID }, "*");
-          } else if (data.action === "connect") {
-            window.removeEventListener("message", popupHandler);
-            resolve(data.addrs);
-          } else if (data.action === "error") {
-            window.removeEventListener("message", popupHandler);
-            reject(new Error(data.message));
-          } else if (data.action === "close") {
-            window.removeEventListener("message", popupHandler);
-            reject(new Error("Operation Cancelled"));
-          }
-        }
-        window.addEventListener("message", popupHandler);
-      });
-    };
-
-    LuteConnect.prototype.signTxns = function(txns) {
-      var self = this;
-      return new Promise(function(resolve, reject) {
-        if (window.lute) {
-          window.dispatchEvent(new CustomEvent("lute-connect", {
-            detail: { action: "sign", txns: txns }
-          }));
-          function extHandler(e) {
-            window.removeEventListener("sign-txns-response", extHandler);
-            var d = e.detail;
-            if (!d) return reject(new Error("No response from Lute extension"));
-            if (d.action === "signed") resolve(d.txns);
-            else if (d.action === "error") reject(new Error(d.message || "Signing failed"));
-            else if (d.action === "close") reject(new Error("User Rejected Request"));
-          }
-          window.addEventListener("sign-txns-response", extHandler);
-          return;
-        }
-        var win = window.open(BASE_URL + "/sign", self.siteName, getPopupParams());
-        if (!win || win.closed || typeof win.closed === "undefined") {
-          return reject(new Error("POPUP_BLOCKED"));
-        }
-        function popupHandler(event) {
-          if (event.origin !== "https://lute.app") return;
-          var detail = event.data;
-          if (!detail) return;
-          if (detail.action === "ready") {
-            win.postMessage({ action: "sign", txns: txns }, "*");
-          } else if (detail.action === "signed") {
-            window.removeEventListener("message", popupHandler);
-            resolve(detail.txns);
-          } else if (detail.action === "error") {
-            window.removeEventListener("message", popupHandler);
-            reject(new Error(detail.message || "Signing failed"));
-          } else if (detail.action === "close") {
-            window.removeEventListener("message", popupHandler);
-            reject(new Error("User Rejected Request"));
-          }
-        }
-        window.addEventListener("message", popupHandler);
-      });
-    };
-
-    // ─── UI helpers ──────────────────────────────────────────────────────────
     function getEl(id) { return document.getElementById(id); }
 
     function setStatus(msg, isError) {
-      var d = getEl("statusMsg");
-      d.style.display = "block";
-      d.className = "status-msg " + (isError ? "status-error" : "status-info");
+      var d = getEl('statusMsg');
+      if (!d) return;
+      d.style.display = 'block';
+      d.className = 'status-msg ' + (isError ? 'status-error' : 'status-info');
       d.textContent = msg;
     }
 
     function showSuccess(txid) {
-      getEl("paymentFlow").style.display = "none";
-      getEl("confirmedTxidDisplay").textContent = txid;
-      getEl("successScreen").style.display = "block";
+      var flow = getEl('paymentFlow');
+      if (flow) flow.style.display = 'none';
+      var txidEl = getEl('confirmedTxidDisplay');
+      if (txidEl) txidEl.textContent = txid;
+      var successEl = getEl('successScreen');
+      if (successEl) successEl.style.display = 'block';
     }
 
-    function showPopupBlockedWarning(retryFnName) {
-      var d = getEl("statusMsg");
-      d.style.display = "block";
-      d.className = "status-msg status-error";
-      d.innerHTML =
-        "<strong>Popup blocked by browser.</strong><br>" +
-        "Click the <strong>popup blocked icon</strong> in Chrome\u2019s address bar " +
-        "and choose <em>Always allow popups from 127.0.0.1</em>, " +
-        "then click <strong>Retry</strong>.<br><br>" +
-        "<button onclick=\"window." + retryFnName + "()\" " +
-        "style=\"padding:6px 14px;background:#238636;color:#fff;" +
-        "border:1px solid #2ea043;border-radius:4px;cursor:pointer;font-size:13px;\">" +
-        "Retry</button>";
+    function showPopupBlockedWarning(retryAction) {
+      var d = getEl('statusMsg');
+      if (!d) return;
+      d.style.display = 'block';
+      d.className = 'status-msg status-error';
+      d.innerHTML = '';
+
+      var note = document.createElement('div');
+      note.innerHTML = '<strong>Popup blocked by browser.</strong><br>' +
+        'Chrome blocked the Lute window. Please look at the right side of the address bar, ' +
+        'click the <strong>Pop-up blocked</strong> icon, select <em>Always allow pop-ups from 127.0.0.1</em>, ' +
+        'and click <strong>Done</strong>. Then click Retry below.<br><br>';
+
+      var retryBtn = document.createElement('button');
+      retryBtn.textContent = 'Retry Opening Lute';
+      retryBtn.style.cssText = 'padding:7px 16px;background:#238636;color:#fff;border:1px solid #2ea043;border-radius:5px;cursor:pointer;font-size:13px;font-weight:600;';
+      retryBtn.onclick = function() {
+        if (retryAction === 'connect') step1Connect();
+        else if (retryAction === 'sign') step2Sign();
+      };
+
+      d.appendChild(note);
+      d.appendChild(retryBtn);
     }
 
-    // ─── State ───────────────────────────────────────────────────────────────
-    var lute = new LuteConnect("modu");
+    var lute = new LuteConnect('modu');
     var activeAccount = null;
     var preparedTxnB64 = null;
 
-    // ─── STEP 1: connect ─────────────────────────────────────────────────────
     function step1Connect() {
-      var btn = getEl("luteBtn");
-      btn.disabled = true;
-      btn.textContent = "Connecting to Lute\u2026";
-      setStatus("Opening Lute wallet\u2026 approve the popup if Chrome asks", false);
+      console.log('[modu] step1Connect called');
+      var btn = getEl('luteBtn');
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = 'Connecting to Lute...';
+      }
+      setStatus('Opening Lute wallet... Approve connection in popup.', false);
 
-      lute.connect("testnet-v1.0").then(function(addrs) {
-        if (!addrs || addrs.length === 0) throw new Error("No accounts selected in Lute");
+      lute.connect('testnet-v1.0').then(function(addrs) {
+        console.log('[modu] Lute connected successfully with accounts:', addrs);
+        if (!addrs || addrs.length === 0) throw new Error('No accounts selected in Lute');
         activeAccount = addrs[0];
-        getEl("connectedAccountDisplay").textContent =
-          activeAccount.slice(0, 10) + "\u2026" + activeAccount.slice(-8);
-        getEl("accountCard").style.display = "block";
-        setStatus("Connected \u2713  Fetching transaction\u2026", false);
-        getEl("luteBtn").textContent = "Preparing transaction\u2026";
 
-        return fetch("/api/prepare-txn", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
+        var accDisp = getEl('connectedAccountDisplay');
+        if (accDisp) {
+          accDisp.textContent = activeAccount.slice(0, 10) + '...' + activeAccount.slice(-8);
+        }
+        var accCard = getEl('accountCard');
+        if (accCard) accCard.style.display = 'block';
+
+        setStatus('Connected! Fetching transaction parameters...', false);
+        if (btn) btn.textContent = 'Preparing transaction...';
+
+        return fetch('/api/prepare-txn', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ from: activeAccount })
         });
       }).then(function(r) {
         return r.json().then(function(d) { return { ok: r.ok, data: d }; });
       }).then(function(result) {
-        if (!result.ok || !result.data.txn) throw new Error(result.data.error || "Failed to prepare transaction");
+        if (!result.ok || !result.data.txn) {
+          throw new Error(result.data.error || 'Failed to prepare transaction');
+        }
         preparedTxnB64 = result.data.txn;
-        var b = getEl("luteBtn");
-        b.disabled = false;
-        b.textContent = "\u26a1 Sign & Pay ${humanAmount} ${assetName} in Lute";
-        b.onclick = step2Sign;
-        setStatus("Ready \u2014 click the button to sign the transaction in Lute.", false);
+        console.log('[modu] Unsigned transaction prepared successfully');
+
+        var b = getEl('luteBtn');
+        if (b) {
+          b.disabled = false;
+          b.textContent = '⚡ Sign & Pay ${humanAmount} ${assetName} in Lute';
+          b.onclick = step2Sign;
+        }
+        setStatus('Ready! Click the button above to sign the transaction in Lute.', false);
       }).catch(function(err) {
-        var b = getEl("luteBtn");
-        b.disabled = false;
-        b.textContent = "Connect Lute Wallet";
-        b.onclick = step1Connect;
-        if (err && err.message === "POPUP_BLOCKED") {
-          showPopupBlockedWarning("moduStep1Connect");
+        console.error('[modu] Connect error:', err);
+        var b = getEl('luteBtn');
+        if (b) {
+          b.disabled = false;
+          b.textContent = 'Connect Lute Wallet';
+          b.onclick = step1Connect;
+        }
+        if (err && err.message === 'POPUP_BLOCKED') {
+          showPopupBlockedWarning('connect');
         } else {
-          setStatus("Error: " + ((err && err.message) || "Connect failed"), true);
+          setStatus('Error: ' + ((err && err.message) || 'Connect failed'), true);
         }
       });
     }
 
-    // ─── STEP 2: sign ────────────────────────────────────────────────────────
     function step2Sign() {
+      console.log('[modu] step2Sign called');
       if (!preparedTxnB64) {
-        setStatus("Transaction not ready yet, please wait\u2026", true);
+        setStatus('Transaction not ready yet, please retry...', true);
         return;
       }
-      var btn = getEl("luteBtn");
-      btn.disabled = true;
-      btn.textContent = "Signing in Lute\u2026";
-      setStatus("Opening Lute to sign\u2026 approve the popup if Chrome asks", false);
+      var btn = getEl('luteBtn');
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = 'Signing in Lute...';
+      }
+      setStatus('Opening Lute to sign... Approve the payment transaction in the popup.', false);
 
       lute.signTxns([{ txn: preparedTxnB64 }]).then(function(signedTxns) {
-        if (!signedTxns || !signedTxns[0]) throw new Error("Transaction was not signed in Lute");
-        getEl("luteBtn").textContent = "Broadcasting\u2026";
-        setStatus("Signed \u2713  Broadcasting to Algorand Testnet\u2026", false);
+        console.log('[modu] Transaction signed successfully by Lute');
+        if (!signedTxns || !signedTxns[0]) throw new Error('Transaction was not signed in Lute');
 
-        return fetch("/api/broadcast", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
+        var b = getEl('luteBtn');
+        if (b) b.textContent = 'Broadcasting to Testnet...';
+        setStatus('Transaction signed! Broadcasting to Algorand Testnet...', false);
+
+        return fetch('/api/broadcast', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ signedTxn: Array.from(signedTxns[0]) })
         });
       }).then(function(r) {
         return r.json().then(function(d) { return { ok: r.ok, data: d }; });
       }).then(function(result) {
-        if (!result.ok || !result.data.txId) throw new Error(result.data.error || "Broadcast failed");
-        setStatus("Confirmed on Testnet \u2713  TxID: " + result.data.txId, false);
+        if (!result.ok || !result.data.txId) {
+          throw new Error(result.data.error || 'Broadcast failed');
+        }
+        console.log('[modu] Transaction confirmed on-chain:', result.data.txId);
+        setStatus('Confirmed on Testnet! TxID: ' + result.data.txId, false);
         showSuccess(result.data.txId);
       }).catch(function(err) {
-        var b = getEl("luteBtn");
-        b.disabled = false;
-        b.textContent = "\u26a1 Sign & Pay ${humanAmount} ${assetName} in Lute";
-        if (err && err.message === "POPUP_BLOCKED") {
-          showPopupBlockedWarning("moduStep2Sign");
+        console.error('[modu] Sign error:', err);
+        var b = getEl('luteBtn');
+        if (b) {
+          b.disabled = false;
+          b.textContent = '⚡ Sign & Pay ${humanAmount} ${assetName} in Lute';
+        }
+        if (err && err.message === 'POPUP_BLOCKED') {
+          showPopupBlockedWarning('sign');
         } else {
-          setStatus("Error: " + ((err && err.message) || "Sign failed"), true);
+          setStatus('Error: ' + ((err && err.message) || 'Sign failed'), true);
         }
       });
     }
 
-    // ─── Wire button + expose on window for onclick attribute ─────────────────
-    // Expose on window so that onclick="window.moduStep1Connect()" works
-    // even if MetaMask/SES has frozen the global scope for bare names.
-    window.moduStep1Connect = step1Connect;
-    window.moduStep2Sign = step2Sign;
-
-    var btn = getEl("luteBtn");
+    // Attach click listener
+    var btn = getEl('luteBtn');
     if (btn) {
       btn.onclick = step1Connect;
-      btn.setAttribute("onclick", "window.moduStep1Connect()");
     }
-
-  })(); // end IIFE
+  })();
   </script>
 </body>
 </html>`;
