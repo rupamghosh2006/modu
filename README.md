@@ -1,12 +1,19 @@
 # modu — Monetize Any HTTP API with x402 on Algorand
 
+[![npm version](https://img.shields.io/npm/v/@ruponchain/modu?color=cb3837&logo=npm)](https://www.npmjs.com/package/@ruponchain/modu)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.4-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Node.js](https://img.shields.io/badge/Node.js-%3E%3D20-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
+[![Algorand](https://img.shields.io/badge/Algorand-x402-000000?logo=algorand&logoColor=white)](https://algorand.co)
+[![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?logo=docker&logoColor=white)](https://www.docker.com/)
+
 `modu` is a developer tool and edge reverse proxy that allows developers to turn any existing HTTP API endpoint into a pay-per-request endpoint settled in Algorand USDC (or ALGO) with **zero payment code** written by the developer.
 
 The CLI communicates with a Fastify control-plane API to register origin URLs and issue proxy endpoints. The edge reverse proxy enforces the **x402 micropayment protocol** (`HTTP 402 Payment Required` challenge → signed on-chain payment → retry with `X-PAYMENT-TXID` → `200 OK` with verbatim streaming response + `X-PAYMENT-RESPONSE` settlement receipt).
 
 ---
 
-## 🏗️ Architecture & Monorepo Layout
+## Architecture & Monorepo Layout
 
 ```
 modu/
@@ -20,79 +27,190 @@ modu/
 
 ---
 
-## ⚡ Quick Start
+## Quick Start
 
 ### 1. Installation
 
-Install dependencies and build packages:
+Install globally via npm:
+
+```bash
+npm install -g @ruponchain/modu
+```
+
+Or run directly with npx:
+
+```bash
+npx @ruponchain/modu --help
+```
+
+For local development from source:
 
 ```bash
 npm install
 npm run build
-```
-
-Link the CLI locally:
-
-```bash
 cd packages/cli
 npm link
 ```
 
-Verify zero-config help works:
+### 2. Configure Authentication & Payout Wallet
+
+Run `modu config` to authenticate your developer account via browser and link your Algorand payout wallet:
 
 ```bash
-modu --help
+modu config
+```
+
+```text
+modu CLI Setup & Configuration
+Step 1 of 2: Developer Authentication
+Opening browser to authorize CLI: https://modu-to68.onrender.com/cli-auth?token=...
+Waiting for authorization in browser...
+Successfully authenticated!
+
+Step 2 of 2: Connect Algorand Payout Wallet
+? Enter your Algorand payout wallet address: YAVQWCPKM6D4HR63K7GYTR5AFR727RCA3VNWSMSJ7VTUJHNRRHEIIJJP4A
+
+Configuration Complete!
+Account:         Authenticated
+Payout Wallet:   YAVQWCPKM6D4HR63K7GYTR5AFR727RCA3VNWSMSJ7VTUJHNRRHEIIJJP4A
+Proxy URL:       https://modu-proxy.onrender.com
+All x402 endpoint payments will settle directly to your payout wallet.
+```
+
+### 3. Monetize an Endpoint with x402
+
+Run `modu register` (interactive wizard or with command-line flags):
+
+```bash
+modu register
+```
+
+```text
+Monetize an Endpoint with x402 Micropayments
+Follow the prompts below to configure your pay-per-request endpoint:
+
+? Origin URL to proxy (e.g. https://httpbin.org/get): https://httpbin.org/get
+? Price per request in tokens (e.g. 0.001): 0.02
+
+? Select payment asset:
+  1) USDC - USD Coin on Algorand (ASA 10458941) (default)
+  2) ALGO - Native Algorand cryptocurrency
+Select [1-2] or name (default: USDC): USDC
+? Custom proxy path slug (optional, press Enter to auto-generate): 
+
+Endpoint Registered Successfully!
+
+Endpoint ID:    07ec880f
+Proxy URL:      https://modu-proxy.onrender.com/p/f21408
+Origin URL:     https://httpbin.org/get
+Price:          0.02 USDC
+Payout To:      YAVQWCPKM6D4HR63K7GYTR5AFR727RCA3VNWSMSJ7VTUJHNRRHEIIJJP4A
+
+Call and pay with modu get:
+  modu get https://modu-proxy.onrender.com/p/f21408
+
+Or test manually with curl:
+# 1. Call endpoint without payment — receive HTTP 402 challenge:
+  curl -i https://modu-proxy.onrender.com/p/f21408
+
+# 2. Call endpoint with confirmed Algorand payment txid:
+  curl -i -H "X-PAYMENT-TXID: <txid>" https://modu-proxy.onrender.com/p/f21408
+```
+
+### 4. Call & Pay via `modu get`
+
+Call the proxied endpoint with `modu get`. When challenged with `HTTP 402 Payment Required`, `modu` opens your browser to connect Lute wallet and sign the Algorand micropayment, settling on-chain and streaming back the `200 OK` response:
+
+```bash
+modu get https://modu-proxy.onrender.com/p/f21408
+```
+
+```text
+HTTP/1.1 402 Payment Required
+content-type: application/json; charset=utf-8
+
+{"x402Version":1,"accepts":[{"scheme":"exact","network":"algorand-testnet","maxAmountRequired":"20000","asset":"10458941","payTo":"YAVQWCPKM6D4HR63K7GYTR5AFR727RCA3VNWSMSJ7VTUJHNRRHEIIJJP4A","resource":"https://modu-proxy.onrender.com/p/f21408","nonce":"66379e6e3e533c6bb38192af2f34e3e1"}]}
+
+Settle Micropayment via Lute Wallet
+Amount:      0.02 USDC
+Recipient:   YAVQWCPKM6D4HR63K7GYTR5AFR727RCA3VNWSMSJ7VTUJHNRRHEIIJJP4A
+Nonce:       66379e6e3e533c6bb38192af2f34e3e1
+Network:     algorand-testnet
+
+Opening browser for Lute payment approval: http://127.0.0.1:51988/pay
+Waiting for payment approval in Lute (or paste confirmed Algorand TxID here)...
+HTTP/1.1 200 OK
+x-payment-response: {"status":"settled","txid":"B2XJHZ5Q4CBAUPY6Y4RPRVKWG7IFBFZMD7A5DIMHJC6WCBRXCV7Q","payer":"5HQVA7F4G4EJEZHDA3JT763RPCR5NOPERFI5R4HKAKFZA4WDP55NTXQODY","amount":"20000","asset":"10458941"}
+
+{
+  "args": {},
+  "headers": { ... },
+  "origin": "106.202.7.189",
+  "url": "https://httpbin.org/get"
+}
 ```
 
 ---
 
-## 💻 CLI Commands
+## CLI Commands
 
-### 1. `modu login`
-Opens a browser to authorize the CLI session. Polls the control plane and saves a long-lived API key to `~/.modu/config.json` with secure permissions (`0600`).
+### 1. `modu config [address]`
+Configure authentication and your Algorand payout destination in a single unified command. If not authenticated, opens a browser to log in and saves credentials locally to `~/.modu/config.json`.
 ```bash
-modu login
-# or output raw JSON:
-modu login --json
+# Interactive setup (browser login + payout wallet prompt):
+modu config
+
+# Configure or update payout address directly:
+modu config 2UBKCS6GMACWVLAXDZZ47A46K452Z47H4VNLFDE6K7U7N7Y5P67G3RTHQ4
+
+# Force re-authentication in browser:
+modu config --relogin
 ```
 
-### 2. `modu wallet create`
-Generates a fresh Algorand keypair locally using `algosdk.generateAccount()`. Prints the public address and the 25-word recovery mnemonic.
-> ⚠️ **Security Guarantee**: The private key and mnemonic are generated locally and **never transmitted or stored** by `modu`.
+### 2. `modu register`
+Monetizes an origin HTTP API endpoint with x402 micropayments. If flags are omitted, launches an interactive wizard. Automatically verifies origin reachability with a 3-second `HEAD` request.
 ```bash
-modu wallet create
-```
+# Interactive wizard:
+modu register
 
-### 3. `modu wallet connect <algorand-address>`
-Validates the Algorand address checksum locally and registers it with the control plane as your payout destination for all incoming payments.
-```bash
-modu wallet connect 2UBKCS6GMACWVLAXDZZ47A46K452Z47H4VNLFDE6K7U7N7Y5P67G3RTHQ4
-```
-
-### 4. `modu register --url <url> --price <amount> --asset <USDC|ALGO> [--path <slug>]`
-Monetizes an origin HTTP API endpoint. Automatically tests origin reachability with a 3-second `HEAD` request.
-```bash
-modu register --url https://api.my-service.com/v1/generate --price 0.01 --asset USDC --path generate
+# Or provide flags directly:
+modu register --url https://httpbin.org/get --price 0.02 --asset USDC --path my-api
 ```
 Output:
 ```
-⚡ Endpoint Registered Successfully!
+Endpoint Registered Successfully!
 
-Endpoint ID:    8f2a1c
-Proxy URL:      http://localhost:4000/p/generate
-Origin URL:     https://api.my-service.com/v1/generate
-Price:          0.01 USDC
-Payout To:      2UBKCS6GMACWVLAXDZZ47A46K452Z47H4VNLFDE6K7U7N7Y5P67G3RTHQ4
+Endpoint ID:    07ec880f
+Proxy URL:      https://modu-proxy.onrender.com/p/f21408
+Origin URL:     https://httpbin.org/get
+Price:          0.02 USDC
+Payout To:      YAVQWCPKM6D4HR63K7GYTR5AFR727RCA3VNWSMSJ7VTUJHNRRHEIIJJP4A
 
 Try it with curl:
 # 1. Request without payment (HTTP 402 challenge):
-curl -i http://localhost:4000/p/generate
+curl -i https://modu-proxy.onrender.com/p/f21408
 
 # 2. Request with Algorand payment txid:
-curl -i -H "X-PAYMENT-TXID: <txid>" http://localhost:4000/p/generate
+curl -i -H "X-PAYMENT-TXID: <txid>" https://modu-proxy.onrender.com/p/f21408
 ```
 
-### 5. `modu list`
+### 3. `modu get <url>` (alias: `modu call <url>`)
+Calls a modu-proxied x402 endpoint from your terminal. When the endpoint responds with an `HTTP 402 Payment Required` challenge, `modu` automatically opens your browser with a payment UI to connect and sign via Lute wallet, waits for on-chain settlement, and retrieves the verbatim `200 OK` response with the settlement receipt.
+```bash
+# Call an endpoint (opens browser for payment on 402 challenge):
+modu get https://modu-proxy.onrender.com/p/f21408
+
+# Pass custom headers:
+modu get https://modu-proxy.onrender.com/p/f21408 -H "Authorization: Bearer my-token"
+
+# Supply an existing Algorand payment transaction ID directly:
+modu get https://modu-proxy.onrender.com/p/f21408 --txid <txid>
+
+# Run without opening a browser:
+modu get https://modu-proxy.onrender.com/p/f21408 --no-browser
+```
+
+### 4. `modu list`
 Displays a tabular overview of your registered endpoints, prices, today's request count, and revenue:
 ```bash
 modu list
@@ -100,28 +218,51 @@ modu list
 modu list --json
 ```
 
-### 6. `modu revoke <endpointId>`
+### 5. `modu stats <endpointId>`
+Displays total volume, paid requests, revenue breakdown by day, and top payer addresses:
+```bash
+modu stats 8f2a1c
+# or JSON:
+modu stats 8f2a1c --json
+```
+
+### 6. `modu logs <endpointId> [--follow]`
+Inspects recent requests or streams live traffic via Server-Sent Events (SSE):
+```bash
+# View recent 50 requests:
+modu logs 8f2a1c
+
+# Stream live traffic in real-time:
+modu logs 8f2a1c --follow
+
+# Limit recent logs count:
+modu logs 8f2a1c --limit 100
+```
+
+### 7. `modu revoke <endpointId>`
 Immediately revokes the route. The edge proxy returns `HTTP 410 Gone` with zero propagation delay.
 ```bash
 modu revoke 8f2a1c
 ```
 
-### 7. `modu logs <endpointId> [--follow]`
-Inspects recent requests or streams live traffic via Server-Sent Events (SSE):
+### 8. `modu wallet create`
+Generates a fresh Algorand keypair locally using `algosdk.generateAccount()`. Prints the public address and the 25-word recovery mnemonic.
+> **Security Guarantee**: The private key and mnemonic are generated locally and **never transmitted or stored** by `modu`.
 ```bash
-modu logs 8f2a1c
-modu logs 8f2a1c --follow
+modu wallet create
+# or JSON output:
+modu wallet create --json
 ```
 
-### 8. `modu stats <endpointId>`
-Displays total volume, paid requests, revenue breakdown by day, and top payer addresses:
+### 9. `modu wallet connect <algorand-address>`
+Validates the Algorand address checksum locally and registers it with the control plane as your payout destination for all incoming payments.
 ```bash
-modu stats 8f2a1c
+modu wallet connect 2UBKCS6GMACWVLAXDZZ47A46K452Z47H4VNLFDE6K7U7N7Y5P67G3RTHQ4
 ```
 
 ---
 
-## 📡 The x402 Protocol Flow
+## The x402 Protocol Flow
 
 ```
    Consumer                       Proxy                        Origin API
@@ -154,7 +295,7 @@ modu stats 8f2a1c
 
 ---
 
-## 🧪 Running Tests
+## Running Tests
 
 Run the test suite across all workspaces:
 
@@ -177,7 +318,7 @@ npm --prefix packages/control-plane test
 
 ---
 
-## 🛠️ Infrastructure & Deployment
+## Infrastructure & Deployment
 
 ### 1. Local Containerized Stack (Docker Compose)
 
@@ -205,7 +346,7 @@ This repository includes a [`render.yaml`](./render.yaml) Blueprint that defines
 4. Select your repository. Render automatically reads `render.yaml` and configures:
    - **Control Plane**: Web service with a 1 GB persistent disk for endpoint/account data.
    - **Edge Proxy**: Web service connected to the Control Plane.
-5. Click **Apply**. Once built, you'll receive public HTTPS URLs (e.g., `https://modu-control-plane.onrender.com` and `https://modu-proxy.onrender.com`).
+5. Click **Apply**. Once built, you'll receive public HTTPS URLs (e.g., `https://modu-to68.onrender.com` and `https://modu-proxy.onrender.com`).
 
 ---
 
@@ -232,11 +373,11 @@ Once deployed, set environment variables to point your CLI to the live services:
 $env:MODU_CONTROL_PLANE_URL = "https://your-control-plane.onrender.com"
 $env:MODU_PROXY_URL = "https://your-proxy.onrender.com"
 
-# Log in against the cloud control plane:
-modu login
+# Authenticate and configure payout wallet against the cloud control plane:
+modu config
 
 # Register an endpoint:
-modu register --url https://httpbin.org/get --price 0.01 --asset USDC --path my-api
+modu register --url https://httpbin.org/get --price 0.02 --asset USDC --path my-api
 ```
 
 Or on Linux/macOS:
@@ -244,5 +385,12 @@ Or on Linux/macOS:
 ```bash
 export MODU_CONTROL_PLANE_URL="https://your-control-plane.onrender.com"
 export MODU_PROXY_URL="https://your-proxy.onrender.com"
-modu login
+modu config
 ```
+
+---
+
+## License
+
+MIT (c) [Rupam Ghosh](https://github.com/rupamghosh2006)
+

@@ -1,7 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { Command } from 'commander';
 import { configCommand } from './commands/config.js';
-import { loginCommand } from './commands/login.js';
 import { walletCreateCommand, walletConnectCommand } from './commands/wallet.js';
 import { registerCommand } from './commands/register.js';
 import { listCommand } from './commands/list.js';
@@ -34,16 +33,6 @@ export function createProgram(): Command {
         relogin: opts?.relogin,
         json: isJson,
       });
-    });
-
-  // modu login (legacy shortcut - now also part of `modu config`)
-  program
-    .command('login')
-    .description('Authenticate CLI with your modu developer account via browser')
-    .option('--json', 'Output result in JSON format')
-    .action(async (opts, cmd) => {
-      const isJson = opts.json || cmd.optsWithGlobals().json;
-      await loginCommand({ json: isJson });
     });
 
   // modu wallet
