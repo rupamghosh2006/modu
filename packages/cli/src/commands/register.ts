@@ -1,5 +1,5 @@
 import chalk from 'chalk';
-import { loadConfig, getControlPlaneUrl, getProxyUrl } from '../config.js';
+import { loadConfig, saveConfig, getControlPlaneUrl, getProxyUrl } from '../config.js';
 import { logInfo, logWarn, logError } from '../logger.js';
 import { promptText, promptSelect } from '../prompts.js';
 
@@ -163,6 +163,10 @@ export async function registerCommand(options: RegisterOptions = {}): Promise<vo
 
     if (!res.ok) {
       const errBody = (await res.json().catch(() => ({}))) as any;
+      if (res.status === 401 || res.status === 403) {
+        saveConfig({ apiKey: undefined }, options.configPath);
+        throw new Error('Invalid or expired API key. Credentials cleared; please run `modu config` to re-authenticate in browser.');
+      }
       throw new Error(errBody.error || `Control plane returned ${res.status}`);
     }
 
@@ -202,7 +206,10 @@ export async function registerCommand(options: RegisterOptions = {}): Promise<vo
     console.log(`${chalk.bold('Price:')}          ${chalk.yellow(`${data.price} ${data.asset}`)}`);
     console.log(`${chalk.bold('Payout To:')}       ${chalk.green(data.payoutAddress)}`);
 
-    console.log(chalk.bold('\nTry it with curl:'));
+    console.log(chalk.bold('\n⚡ Call and pay with modu get:'));
+    console.log(`  ${chalk.bold.cyan(`modu get ${data.proxyUrl}`)}`);
+
+    console.log(chalk.bold('\nOr test manually with curl:'));
     console.log(chalk.dim('# 1. Call endpoint without payment — receive HTTP 402 challenge:'));
     console.log(`  ${chalk.cyan(`curl -i ${data.proxyUrl}`)}`);
     console.log(chalk.dim('\n# 2. Call endpoint with confirmed Algorand payment txid:'));

@@ -92,6 +92,10 @@ export async function walletConnectCommand(
 
     if (!res.ok) {
       const errBody = (await res.json().catch(() => ({}))) as any;
+      if (res.status === 401 || res.status === 403) {
+        saveConfig({ apiKey: undefined }, options.configPath);
+        throw new Error('Invalid or expired API key. Credentials cleared; please run `modu config` to re-authenticate in browser.');
+      }
       throw new Error(errBody.error || `Control plane returned ${res.status}`);
     }
 

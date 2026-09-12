@@ -7,6 +7,7 @@ import { listCommand } from './commands/list.js';
 import { revokeCommand } from './commands/revoke.js';
 import { logsCommand } from './commands/logs.js';
 import { statsCommand } from './commands/stats.js';
+import { getCommand } from './commands/get.js';
 
 export function createProgram(): Command {
   const program = new Command();
@@ -130,6 +131,25 @@ export function createProgram(): Command {
     .action(async (endpointId: string, opts, cmd) => {
       const isJson = opts.json || cmd.optsWithGlobals().json;
       await statsCommand(endpointId, { json: isJson });
+    });
+
+  // modu get <url>
+  program
+    .command('get <url>')
+    .alias('call')
+    .description('Call a modu-proxied x402 endpoint, automatically opening browser for payment if challenged')
+    .option('-H, --header <headers...>', 'Pass custom HTTP header to target (e.g. -H "Authorization: Bearer ...")')
+    .option('--txid <txid>', 'Provide an existing Algorand payment transaction ID directly')
+    .option('--no-browser', 'Do not open browser automatically')
+    .option('--json', 'Output results in JSON format')
+    .action(async (url: string, opts, cmd) => {
+      const isJson = opts.json || cmd.optsWithGlobals().json;
+      await getCommand(url, {
+        headers: opts.header,
+        txid: opts.txid,
+        autoOpen: opts.browser !== false,
+        json: isJson,
+      });
     });
 
   return program;

@@ -33,8 +33,40 @@ export async function configCommand(
   // 1. Authentication check or login
   let apiKey = config.apiKey;
   let payoutAddress = config.payoutAddress;
+  let verifiedEmail: string | undefined;
+  let needAuth = !apiKey || options.relogin;
 
-  if (!apiKey || options.relogin) {
+  if (apiKey && !options.relogin) {
+    try {
+      logInfo('AUTH', 'Verifying existing API key with control plane', { controlPlaneUrl });
+      const res = await fetch(`${controlPlaneUrl}/api/account/me`, {
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+        },
+      });
+
+      if (res.ok) {
+        const account = (await res.json()) as { id: string; email?: string; payoutAddress?: string };
+        verifiedEmail = account.email;
+        if (account.payoutAddress && !payoutAddress) {
+          payoutAddress = account.payoutAddress;
+        }
+        logInfo('AUTH', 'Existing API key verified', { accountId: account.id, email: account.email });
+      } else if (res.status === 401 || res.status === 403) {
+        logWarn('AUTH', 'Saved API key is invalid or expired. Prompting to authenticate...', { status: res.status });
+        if (!options.json) {
+          console.log(chalk.yellow('Saved credentials are invalid or expired. Opening browser to authenticate...'));
+        }
+        apiKey = undefined;
+        saveConfig({ apiKey: undefined }, options.configPath);
+        needAuth = true;
+      }
+    } catch (err: any) {
+      logWarn('AUTH', 'Could not verify API key with control plane (network error)', err);
+    }
+  }
+
+  if (needAuth) {
     if (!options.json) {
       console.log(chalk.bold.cyan('\n⚡ modu CLI Setup & Configuration'));
       console.log(chalk.dim('Step 1 of 2: Developer Authentication'));
@@ -51,6 +83,12 @@ export async function configCommand(
         throw new Error(`Failed to request CLI token: ${res.status} ${res.statusText}`);
       }
       tokenRes = (await res.json()) as any;
+      if (controlPlaneUrl.startsWith('https://') && tokenRes.authUrl?.startsWith('http://')) {
+        tokenRes.authUrl = tokenRes.authUrl.replace(/^http:\/\//, 'https://');
+      }
+      if (controlPlaneUrl.startsWith('https://') && tokenRes.pollUrl?.startsWith('http://')) {
+        tokenRes.pollUrl = tokenRes.pollUrl.replace(/^http:\/\//, 'https://');
+      }
     } catch (err: any) {
       logError('AUTH', 'Failed to request CLI token', err);
       if (options.json) {
@@ -155,7 +193,8 @@ export async function configCommand(
   } else {
     if (!options.json) {
       console.log(chalk.bold.cyan('\n⚡ modu CLI Configuration'));
-      console.log(chalk.green('✓ Authenticated with modu control plane.'));
+      const accountLabel = verifiedEmail ? ` (${verifiedEmail})` : '';
+      console.log(chalk.green(`✓ Authenticated with modu control plane${accountLabel}.`));
     }
   }
 
@@ -246,6 +285,10 @@ export async function configCommand(
 
     if (!res.ok) {
       const errBody = (await res.json().catch(() => ({}))) as any;
+      if (res.status === 401 || res.status === 403) {
+        saveConfig({ apiKey: undefined }, options.configPath);
+        throw new Error('Invalid or expired API key. Credentials cleared; please run `modu config` to re-authenticate in browser.');
+      }
       throw new Error(errBody.error || `Control plane returned ${res.status}`);
     }
 

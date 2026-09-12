@@ -22,6 +22,42 @@ describe('Unified modu config Command', () => {
     mockServer = http.createServer((req, res) => {
       const url = new URL(req.url || '', `http://${req.headers.host}`);
 
+      if (req.method === 'GET' && url.pathname === '/api/account/me') {
+        const auth = req.headers.authorization;
+        if (auth === 'Bearer modu_live_test_config_token') {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ id: 'acc_test_123', email: 'dev@example.com' }));
+          return;
+        }
+        res.writeHead(401, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Invalid API key' }));
+        return;
+      }
+
+      if (req.method === 'POST' && url.pathname === '/api/auth/cli-token') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(
+          JSON.stringify({
+            token: 'tok_reauth_test',
+            authUrl: `${serverUrl}/cli-auth?token=tok_reauth_test`,
+            pollUrl: `${serverUrl}/api/auth/poll?token=tok_reauth_test`,
+          })
+        );
+        return;
+      }
+
+      if (req.method === 'GET' && url.pathname === '/api/auth/poll') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(
+          JSON.stringify({
+            status: 'claimed',
+            apiKey: 'modu_live_test_config_token',
+            payoutAddress: '',
+          })
+        );
+        return;
+      }
+
       if (req.method === 'POST' && url.pathname === '/api/account/payout-address') {
         let body = '';
         req.on('data', (c) => (body += c));
@@ -104,6 +140,36 @@ describe('Unified modu config Command', () => {
 
     const parsed = JSON.parse(stdout);
     assert.ok(parsed.error.includes('Invalid Algorand address'));
+  });
+
+  it('triggers browser re-authentication when saved API key is invalid', async () => {
+    const badConfigPath = path.join(tmpDir, 'bad-config.json');
+    saveConfig(
+      {
+        apiKey: 'invalid_expired_token',
+        controlPlaneUrl: serverUrl,
+      },
+      badConfigPath
+    );
+
+    const testAccount = algosdk.generateAccount();
+    let stdout = '';
+    const origLog = console.log;
+    console.log = (msg: string) => {
+      stdout += msg;
+    };
+
+    await configCommand(testAccount.addr, {
+      json: true,
+      autoOpen: false,
+      pollIntervalMs: 50,
+      configPath: badConfigPath,
+    });
+    console.log = origLog;
+
+    const loaded = loadConfig(badConfigPath);
+    assert.strictEqual(loaded.apiKey, 'modu_live_test_config_token');
+    assert.strictEqual(loaded.payoutAddress, testAccount.addr);
   });
 
   it('writes logs into logfile on operations', () => {

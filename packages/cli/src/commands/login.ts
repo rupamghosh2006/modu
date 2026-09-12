@@ -27,6 +27,12 @@ export async function loginCommand(options: LoginOptions = {}): Promise<void> {
       throw new Error(`Failed to request CLI token: ${res.status} ${res.statusText}`);
     }
     tokenRes = (await res.json()) as any;
+    if (controlPlaneUrl.startsWith('https://') && tokenRes.authUrl?.startsWith('http://')) {
+      tokenRes.authUrl = tokenRes.authUrl.replace(/^http:\/\//, 'https://');
+    }
+    if (controlPlaneUrl.startsWith('https://') && tokenRes.pollUrl?.startsWith('http://')) {
+      tokenRes.pollUrl = tokenRes.pollUrl.replace(/^http:\/\//, 'https://');
+    }
     logInfo('LOGIN', 'CLI token issued', { pollUrl: tokenRes.pollUrl });
   } catch (err: any) {
     logError('LOGIN', 'Failed to request CLI token', err);

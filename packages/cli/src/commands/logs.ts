@@ -1,6 +1,6 @@
 import chalk from 'chalk';
 import Table from 'cli-table3';
-import { loadConfig, getControlPlaneUrl } from '../config.js';
+import { loadConfig, saveConfig, getControlPlaneUrl } from '../config.js';
 import { RequestLog } from '../shared.js';
 
 export interface LogsOptions {
@@ -25,7 +25,7 @@ export async function logsCommand(endpointId: string, options: LogsOptions = {})
 
   const config = loadConfig(options.configPath);
   if (!config.apiKey) {
-    const errorMsg = 'Not authenticated. Please run `modu login` first.';
+    const errorMsg = 'Not authenticated. Please run `modu config` first.';
     if (options.json) {
       console.log(JSON.stringify({ error: errorMsg }));
     } else {
@@ -51,6 +51,10 @@ export async function logsCommand(endpointId: string, options: LogsOptions = {})
       });
 
       if (!res.ok) {
+        if (res.status === 401 || res.status === 403) {
+          saveConfig({ apiKey: undefined }, options.configPath);
+          throw new Error('Invalid or expired API key. Credentials cleared; please run `modu config` to re-authenticate in browser.');
+        }
         throw new Error(`Failed to stream logs: ${res.status} ${res.statusText}`);
       }
 
@@ -119,6 +123,10 @@ export async function logsCommand(endpointId: string, options: LogsOptions = {})
 
     if (!res.ok) {
       const errBody = (await res.json().catch(() => ({}))) as any;
+      if (res.status === 401 || res.status === 403) {
+        saveConfig({ apiKey: undefined }, options.configPath);
+        throw new Error('Invalid or expired API key. Credentials cleared; please run `modu config` to re-authenticate in browser.');
+      }
       throw new Error(errBody.error || `Control plane returned ${res.status}`);
     }
 

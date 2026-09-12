@@ -1,6 +1,6 @@
 import chalk from 'chalk';
 import Table from 'cli-table3';
-import { loadConfig, getControlPlaneUrl, getProxyUrl } from '../config.js';
+import { loadConfig, saveConfig, getControlPlaneUrl, getProxyUrl } from '../config.js';
 import { logInfo, logError } from '../logger.js';
 import { EndpointSummary } from '../shared.js';
 
@@ -36,6 +36,10 @@ export async function listCommand(options: ListOptions = {}): Promise<void> {
 
     if (!res.ok) {
       const errBody = (await res.json().catch(() => ({}))) as any;
+      if (res.status === 401 || res.status === 403) {
+        saveConfig({ apiKey: undefined }, options.configPath);
+        throw new Error('Invalid or expired API key. Credentials cleared; please run `modu config` to re-authenticate in browser.');
+      }
       throw new Error(errBody.error || `Control plane returned ${res.status}`);
     }
 
