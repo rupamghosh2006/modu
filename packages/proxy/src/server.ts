@@ -283,8 +283,8 @@ export function buildProxyServer(options: ProxyServerOptions = {}): FastifyInsta
       | undefined;
     const txidHeader = req.headers['x-payment-txid'] as string | undefined;
 
-    // Optional legacy local verifier path for backwards-compatibility
-    if (useLocalVerifier && txidHeader && !paymentHeader) {
+    // Support X-PAYMENT-TXID fallback (for CLI `modu get` browser Lute wallet flow)
+    if (txidHeader && !paymentHeader) {
       const startTime = Date.now();
       const verification = await localVerifier.verify({
         txid: txidHeader.trim(),
