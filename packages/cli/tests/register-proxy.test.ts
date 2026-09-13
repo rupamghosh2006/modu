@@ -123,6 +123,62 @@ describe('Register and List Proxy URL Formatting & Logging', () => {
     assert.ok(logContent.includes('[INFO] [REGISTER] Endpoint registered successfully'));
   });
 
+  it('prints formatted registration success message without x402 v2 curl instructions', async () => {
+    const outputLines: string[] = [];
+    const origLog = console.log;
+    console.log = (...args: any[]) => {
+      outputLines.push(args.map((a) => String(a)).join(' '));
+    };
+
+    try {
+      await registerCommand({
+        url: 'https://httpbin.org/get',
+        price: '0.001',
+        asset: 'USDC',
+        path: 'my-fixed-endpoint',
+        configPath,
+        skipReachabilityCheck: true,
+      });
+    } finally {
+      console.log = origLog;
+    }
+
+    const cleanOutput = outputLines
+      .join('\n')
+      .replace(/\u001b\[[0-9;]*m/g, '');
+
+    // Assert required fields and formatting
+    assert.ok(cleanOutput.includes('⚡ Endpoint Registered Successfully!'));
+    assert.ok(cleanOutput.includes('Endpoint ID:    ep_test_proxy_fix'));
+    assert.ok(
+      cleanOutput.includes('Proxy URL:      https://modu-proxy.onrender.com/p/my-fixed-endpoint')
+    );
+    assert.ok(cleanOutput.includes('Origin URL:     https://httpbin.org/get'));
+    assert.ok(cleanOutput.includes('Price:          0.001 USDC'));
+    assert.ok(cleanOutput.includes('Payout To:       TESTPAYOUTADDR'));
+    assert.ok(cleanOutput.includes('⚡ Pay via browser:'));
+    assert.ok(
+      cleanOutput.includes('modu get https://modu-proxy.onrender.com/p/my-fixed-endpoint')
+    );
+    assert.ok(
+      cleanOutput.includes(
+        '💡 Tip: AI agents can also pay this endpoint automatically via MCP.'
+      )
+    );
+    assert.ok(
+      cleanOutput.includes(
+        'Run `modu mcp:serve` to connect it to Claude Desktop or Claude Code.'
+      )
+    );
+
+    // Assert removed items
+    assert.strictEqual(cleanOutput.includes('Call and pay with modu get:'), false);
+    assert.strictEqual(cleanOutput.includes('Or test with x402 v2 client:'), false);
+    assert.strictEqual(cleanOutput.includes('curl -i'), false);
+    assert.strictEqual(cleanOutput.includes('X-PAYMENT'), false);
+    assert.strictEqual(cleanOutput.includes('pay-example.ts'), false);
+  });
+
   it('rewrites localhost:4000 to configured proxy url on list', async () => {
     let stdout = '';
     const origLog = console.log;

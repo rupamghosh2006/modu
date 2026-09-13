@@ -206,18 +206,11 @@ export async function registerCommand(options: RegisterOptions = {}): Promise<vo
     console.log(`${chalk.bold('Price:')}          ${chalk.yellow(`${data.price} ${data.asset}`)}`);
     console.log(`${chalk.bold('Payout To:')}       ${chalk.green(data.payoutAddress)}`);
 
-    console.log(chalk.bold('\n⚡ Call and pay with modu get:'));
+    console.log(chalk.bold('\n⚡ Pay via browser:'));
     console.log(`  ${chalk.bold.cyan(`modu get ${data.proxyUrl}`)}`);
 
-    console.log(chalk.bold('\nOr test with x402 v2 client:'));
-    console.log(chalk.dim('# 1. Call endpoint without payment — receive HTTP 402 challenge:'));
-    console.log(`  ${chalk.cyan(`curl -i ${data.proxyUrl}`)}`);
-    console.log(chalk.dim('\n# 2. Call endpoint with x402 v2 payment payload:'));
-    console.log(
-      `  ${chalk.cyan(`curl -i -H "X-PAYMENT: <base64_payload>" ${data.proxyUrl}`)}`
-    );
-    console.log(chalk.dim('\n# Or run the reference x402 consumer script:'));
-    console.log(`  ${chalk.cyan(`npx tsx examples/pay-example.ts ${data.proxyUrl}`)}\n`);
+    console.log('\n💡 Tip: AI agents can also pay this endpoint automatically via MCP.');
+    console.log('  Run `modu mcp:serve` to connect it to Claude Desktop or Claude Code.\n');
   } catch (err: any) {
     logError('REGISTER', 'Registration error', err);
     if (options.json) {

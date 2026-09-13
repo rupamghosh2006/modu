@@ -8,6 +8,7 @@ import { revokeCommand } from './commands/revoke.js';
 import { logsCommand } from './commands/logs.js';
 import { statsCommand } from './commands/stats.js';
 import { getCommand } from './commands/get.js';
+import { mcpServeCommand } from './commands/mcp.js';
 
 export function createProgram(): Command {
   const program = new Command();
@@ -140,6 +141,24 @@ export function createProgram(): Command {
         autoOpen: opts.browser !== false,
         json: isJson,
       });
+    });
+
+  // modu mcp:serve
+  program
+    .command('mcp:serve')
+    .alias('mcp-serve')
+    .description('Start the modu x402 Model Context Protocol (MCP) server over stdio')
+    .action(async () => {
+      await mcpServeCommand();
+    });
+
+  // modu mcp [serve]
+  const mcp = program.command('mcp').description('Model Context Protocol (MCP) integration');
+  mcp
+    .command('serve')
+    .description('Start the modu x402 Model Context Protocol (MCP) server over stdio')
+    .action(async () => {
+      await mcpServeCommand();
     });
 
   return program;

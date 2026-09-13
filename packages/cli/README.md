@@ -53,13 +53,19 @@ modu register --url https://httpbin.org/get --price 0.02 --asset USDC --path my-
 
 Output:
 ```text
-Endpoint Registered Successfully!
+⚡ Endpoint Registered Successfully!
 
 Endpoint ID:    07ec880f
 Proxy URL:      https://modu-proxy.onrender.com/p/f21408
 Origin URL:     https://httpbin.org/get
 Price:          0.02 USDC
-Payout To:      YAVQWCPKM6D4HR63K7GYTR5AFR727RCA3VNWSMSJ7VTUJHNRRHEIIJJP4A
+Payout To:       YAVQWCPKM6D4HR63K7GYTR5AFR727RCA3VNWSMSJ7VTUJHNRRHEIIJJP4A
+
+⚡ Pay via browser:
+  modu get https://modu-proxy.onrender.com/p/f21408
+
+💡 Tip: AI agents can also pay this endpoint automatically via MCP.
+  Run `modu mcp:serve` to connect it to Claude Desktop or Claude Code.
 ```
 
 ### 3. Call & Pay with `modu get`

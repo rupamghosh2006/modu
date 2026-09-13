@@ -98,23 +98,19 @@ Follow the prompts below to configure your pay-per-request endpoint:
 Select [1-2] or name (default: USDC): USDC
 ? Custom proxy path slug (optional, press Enter to auto-generate): 
 
-Endpoint Registered Successfully!
+⚡ Endpoint Registered Successfully!
 
 Endpoint ID:    07ec880f
 Proxy URL:      https://modu-proxy.onrender.com/p/f21408
 Origin URL:     https://httpbin.org/get
 Price:          0.02 USDC
-Payout To:      YAVQWCPKM6D4HR63K7GYTR5AFR727RCA3VNWSMSJ7VTUJHNRRHEIIJJP4A
+Payout To:       YAVQWCPKM6D4HR63K7GYTR5AFR727RCA3VNWSMSJ7VTUJHNRRHEIIJJP4A
 
-Call and pay with modu get:
+⚡ Pay via browser:
   modu get https://modu-proxy.onrender.com/p/f21408
 
-Or test manually with curl:
-# 1. Call endpoint without payment — receive HTTP 402 challenge:
-  curl -i https://modu-proxy.onrender.com/p/f21408
-
-# 2. Call endpoint with signed atomic transaction group payload (via X-PAYMENT):
-  curl -i -H "X-PAYMENT: <base64-payment-payload>" https://modu-proxy.onrender.com/p/f21408
+💡 Tip: AI agents can also pay this endpoint automatically via MCP.
+  Run `modu mcp:serve` to connect it to Claude Desktop or Claude Code.
 ```
 
 ### 4. Call & Pay via `modu get`
@@ -178,20 +174,19 @@ modu register --url https://httpbin.org/get --price 0.02 --asset USDC --path my-
 ```
 Output:
 ```
-Endpoint Registered Successfully!
+⚡ Endpoint Registered Successfully!
 
 Endpoint ID:    07ec880f
 Proxy URL:      https://modu-proxy.onrender.com/p/f21408
 Origin URL:     https://httpbin.org/get
 Price:          0.02 USDC
-Payout To:      YAVQWCPKM6D4HR63K7GYTR5AFR727RCA3VNWSMSJ7VTUJHNRRHEIIJJP4A
+Payout To:       YAVQWCPKM6D4HR63K7GYTR5AFR727RCA3VNWSMSJ7VTUJHNRRHEIIJJP4A
 
-Try it with curl:
-# 1. Request without payment (HTTP 402 challenge):
-curl -i https://modu-proxy.onrender.com/p/f21408
+⚡ Pay via browser:
+  modu get https://modu-proxy.onrender.com/p/f21408
 
-# 2. Request with signed atomic transaction group payload (via X-PAYMENT):
-curl -i -H "X-PAYMENT: <base64-payment-payload>" https://modu-proxy.onrender.com/p/f21408
+💡 Tip: AI agents can also pay this endpoint automatically via MCP.
+  Run `modu mcp:serve` to connect it to Claude Desktop or Claude Code.
 ```
 
 ### 3. `modu get <url>` (alias: `modu call <url>`)
@@ -259,6 +254,68 @@ Validates the Algorand address checksum locally and registers it with the contro
 ```bash
 modu wallet connect 2UBKCS6GMACWVLAXDZZ47A46K452Z47H4VNLFDE6K7U7N7Y5P67G3RTHQ4
 ```
+
+### 10. `modu mcp:serve`
+Starts the official modu Model Context Protocol (MCP) server over standard I/O (stdio). Exposes `call_paid_endpoint` and `wallet_info` tools to AI assistants (such as Claude Desktop and Claude Code), enabling agents to discover, preview, and pay for x402-gated endpoints.
+```bash
+modu mcp:serve
+```
+
+---
+
+## Model Context Protocol (MCP) Integration
+
+The **Model Context Protocol (MCP)** is an open standard that lets AI assistants (like Claude Desktop and Claude Code) securely connect to external tools and data sources. With the `modu-x402` MCP server, AI agents can directly consume paid APIs—they handle the `HTTP 402` challenge, parse price terms, ask for your confirmation (or auto-pay if configured), sign the Algorand atomic transaction group locally, settle with GoPlausible, and use the returned API data inside their reasoning loop.
+
+### Configuration
+
+Add `modu-x402` to your Claude Desktop configuration (`claude_desktop_config.json`) or Claude Code configuration (`~/.claude/mcp.json`):
+
+```json
+{
+  "mcpServers": {
+    "modu-x402": {
+      "command": "npx",
+      "args": ["modu", "mcp:serve"],
+      "env": {
+        "ALGORAND_MNEMONIC": "your 25-word mnemonic",
+        "MODU_MCP_AUTO_PAY": "false"
+      }
+    }
+  }
+}
+```
+
+- **`ALGORAND_MNEMONIC`**: Your 25-word Algorand account recovery phrase used to sign USDC micropayments.
+- **`MODU_MCP_AUTO_PAY`**: 
+  - `false` (default & recommended): Claude prompts you with price, recipient, and asset details before signing any payment. Claude previews the terms, asks for your approval, and re-invokes with `confirm: true`.
+  - `true`: Bypasses preview confirmation and signs payments immediately (intended for trusted, low-value automated workflows).
+
+### Available Tools
+
+1. **`call_paid_endpoint`**
+   - Arguments: `{ "url": string, "confirm"?: boolean }`
+   - Calls a modu x402-gated endpoint. If payment is required, signs and settles a USDC payment on Algorand via the GoPlausible facilitator, then returns the endpoint's response.
+2. **`wallet_info`**
+   - Arguments: `{}`
+   - Returns the configured Algorand payout/payer address and its current ALGO and USDC balances (read-only, no signing).
+
+### Try It
+
+Once connected to Claude Desktop or Claude Code, you can interact with paid endpoints naturally in chat:
+
+> **User Prompt**:  
+> *"Check my wallet balance, then call my modu endpoint at https://modu-proxy.onrender.com/p/c67900 and show me the result."*
+
+**Example Conversation Flow**:
+1. Claude calls `wallet_info` and reports your balance:  
+   *`"Your wallet (5HQV...ODY) currently has 2.45 ALGO and 15.00 USDC."`*
+2. Claude calls `call_paid_endpoint({ "url": "https://modu-proxy.onrender.com/p/c67900" })`.
+3. With `MODU_MCP_AUTO_PAY="false"`, the tool returns a confirmation preview:  
+   *`"⚠️ Payment Required: 0.02 USDC to YAVQ...JP4A on Algorand TestNet. Would you like me to authorize this payment?"`*
+4. You reply: *"Yes, proceed."*
+5. Claude re-invokes `call_paid_endpoint({ "url": "https://modu-proxy.onrender.com/p/c67900", "confirm": true })`.
+6. Payment is signed and settled on-chain via GoPlausible, and Claude displays the live API data along with the settlement transaction ID.
 
 ---
 
