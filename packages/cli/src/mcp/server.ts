@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import {
@@ -18,6 +19,13 @@ try {
   // ignore
 }
 
+let packageVersion = '0.1.11';
+try {
+  packageVersion = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')).version || '0.1.11';
+} catch {
+  // fallback
+}
+
 export interface McpServerOptions {
   name?: string;
   version?: string;
@@ -31,7 +39,7 @@ export function createMcpServer(options: McpServerOptions = {}): Server {
   const server = new Server(
     {
       name: options.name || 'modu-x402',
-      version: options.version || '0.1.10',
+      version: options.version || packageVersion,
     },
     {
       capabilities: {
