@@ -1,10 +1,6 @@
 {
   "name": "modu-monorepo",
-<<<<<<< HEAD
   "version": "0.1.13",
-=======
-  "version": "0.1.12",
->>>>>>> 2e2267715eaf6410079634296ffe4f6a21442168
   "private": true,
   "description": "modu — CLI and infrastructure to monetize any API with x402 on Algorand",
   "workspaces": [
