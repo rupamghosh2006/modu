@@ -1,5 +1,6 @@
 import http from 'node:http';
 import readline from 'node:readline';
+import crypto from 'node:crypto';
 import chalk from 'chalk';
 import open from 'open';
 import algosdk from 'algosdk';
@@ -17,6 +18,7 @@ export interface GetOptions {
 interface X402Accept {
   scheme?: string;
   network?: string;
+  amount?: string;
   maxAmountRequired?: string;
   asset?: string;
   payTo?: string;
@@ -24,6 +26,12 @@ interface X402Accept {
   description?: string;
   maxTimeoutSeconds?: number;
   nonce?: string;
+  extra?: {
+    name?: string;
+    decimals?: number;
+    feePayer?: string;
+    [key: string]: unknown;
+  };
 }
 
 interface X402Challenge {
@@ -79,8 +87,14 @@ export function renderPaymentPage(params: {
   assetId: string;
   nonce: string;
   network: string;
+  genesisID?: string;
 }): string {
   const { url, payTo, humanAmount, assetName, nonce, network } = params;
+  const genesisID =
+    params.genesisID ||
+    (network.includes('mainnet') || network.includes('wGHE2Pwdvd7S12BL5FaOP20EGYesN73ktiC1qzkkit8=')
+      ? 'mainnet-v1.0'
+      : 'testnet-v1.0');
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -654,7 +668,7 @@ export function renderPaymentPage(params: {
       }
       setStatus('Opening Lute wallet... Approve connection in popup.', false);
 
-      lute.connect('testnet-v1.0').then(function(addrs) {
+      lute.connect('${genesisID}').then(function(addrs) {
         console.log('[modu] Lute connected successfully with accounts:', addrs);
         if (!addrs || addrs.length === 0) throw new Error('No accounts selected in Lute');
         activeAccount = addrs[0];
@@ -839,20 +853,41 @@ export async function getCommand(url: string, options: GetOptions = {}): Promise
     challenge = null;
   }
 
+  if (!challenge) {
+    const paymentRequiredHeader = initialRes.headers.get('payment-required');
+    if (paymentRequiredHeader) {
+      try {
+        challenge = JSON.parse(Buffer.from(paymentRequiredHeader, 'base64').toString('utf8'));
+      } catch {
+        // ignore
+      }
+    }
+  }
+
   const accept = challenge?.accepts?.[0];
-  if (!accept || !accept.payTo || !accept.nonce) {
+  if (!accept || !accept.payTo || (!accept.amount && !accept.maxAmountRequired)) {
     logWarn('GET', 'Response 402 was not a valid x402 challenge');
     return;
   }
 
   const payTo = accept.payTo;
-  const nonce = accept.nonce;
+  const nonce = accept.nonce || crypto.randomBytes(16).toString('hex');
   const assetId = accept.asset || '0';
-  const amountMicro = accept.maxAmountRequired || '0';
-  const network = accept.network || 'algorand-testnet';
-  const isAlgo = assetId === '0' || assetId === 'ALGO';
-  const assetName = isAlgo ? 'ALGO' : 'USDC';
-  const decimals = 6;
+  const amountMicro = accept.amount || accept.maxAmountRequired || '0';
+  const rawNetwork = accept.network || 'algorand-testnet';
+  const isMainnet =
+    rawNetwork.includes('wGHE2Pwdvd7S12BL5FaOP20EGYesN73ktiC1qzkkit8=') ||
+    rawNetwork === 'algorand-mainnet' ||
+    rawNetwork === 'mainnet';
+  const network = isMainnet ? 'algorand-mainnet' : 'algorand-testnet';
+  const genesisID = isMainnet ? 'mainnet-v1.0' : 'testnet-v1.0';
+  const algodUrl = isMainnet
+    ? 'https://mainnet-api.algonode.cloud'
+    : 'https://testnet-api.algonode.cloud';
+
+  const isAlgo = assetId === '0' || assetId === 'ALGO' || accept.extra?.name === 'ALGO';
+  const assetName = isAlgo ? 'ALGO' : (accept.extra?.name as string) || 'USDC';
+  const decimals = typeof accept.extra?.decimals === 'number' ? accept.extra.decimals : 6;
   const humanAmount = fromBaseUnits(amountMicro, decimals);
 
   logInfo('GET', 'x402 challenge parsed', {
@@ -901,6 +936,7 @@ export async function getCommand(url: string, options: GetOptions = {}): Promise
           assetId,
           nonce,
           network,
+          genesisID,
         })
       );
       return;
@@ -919,7 +955,7 @@ export async function getCommand(url: string, options: GetOptions = {}): Promise
             return;
           }
 
-          const algodClient = new algosdk.Algodv2('', 'https://testnet-api.algonode.cloud', 443);
+          const algodClient = new algosdk.Algodv2('', algodUrl, 443);
           const params = await algodClient.getTransactionParams().do();
           const noteBytes = encodeNote(nonce);
 
@@ -971,7 +1007,7 @@ export async function getCommand(url: string, options: GetOptions = {}): Promise
             return;
           }
 
-          const algodClient = new algosdk.Algodv2('', 'https://testnet-api.algonode.cloud', 443);
+          const algodClient = new algosdk.Algodv2('', algodUrl, 443);
           const sendRes = await algodClient.sendRawTransaction(signedBytes).do();
           const txId = sendRes.txId || sendRes.txid;
 

@@ -207,10 +207,7 @@ export async function registerCommand(options: RegisterOptions = {}): Promise<vo
     console.log(`${chalk.bold('Payout To:')}       ${chalk.green(data.payoutAddress)}`);
 
     console.log(chalk.bold('\n⚡ Pay via browser:'));
-    console.log(`  ${chalk.bold.cyan(`modu get ${data.proxyUrl}`)}`);
-
-    console.log('\n💡 Tip: AI agents can also pay this endpoint automatically via MCP.');
-    console.log('  Run `modu mcp:serve` to connect it to Claude Desktop or Claude Code.\n');
+    console.log(`  ${chalk.bold.cyan(`modu get ${data.proxyUrl}`)}\n`);
   } catch (err: any) {
     logError('REGISTER', 'Registration error', err);
     if (options.json) {

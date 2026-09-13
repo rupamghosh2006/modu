@@ -1,6 +1,6 @@
 {
   "name": "@ruponchain/modu",
-  "version": "0.1.11",
+  "version": "0.1.12",
   "description": "CLI to monetize any HTTP API with x402 micropayments on Algorand",
   "type": "module",
   "publishConfig": {

@@ -19,9 +19,9 @@ try {
   // ignore
 }
 
-let packageVersion = '0.1.11';
+let packageVersion = '0.1.12';
 try {
-  packageVersion = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')).version || '0.1.11';
+  packageVersion = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')).version || '0.1.12';
 } catch {
   // fallback
 }
@@ -55,7 +55,7 @@ export function createMcpServer(options: McpServerOptions = {}): Server {
         {
           name: 'call_paid_endpoint',
           description:
-            'Calls a modu x402-gated endpoint. If payment is required, signs and settles a USDC payment on Algorand via the GoPlausible facilitator, then returns the endpoint\'s response.',
+            'Calls a modu x402-gated endpoint. If payment is required, signs and settles an ALGO or USDC payment on Algorand, then returns the endpoint\'s response.',
           inputSchema: {
             type: 'object',
             properties: {

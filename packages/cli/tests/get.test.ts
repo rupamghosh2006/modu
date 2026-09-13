@@ -13,6 +13,48 @@ describe('modu get Command & x402 Browser Payment Flow', () => {
       const authTxid = req.headers['x-payment-txid'] as string | undefined;
 
       if (!authTxid) {
+        if (req.url?.includes('v2')) {
+          res.writeHead(402, {
+            'Content-Type': 'application/json; charset=utf-8',
+            'Server': 'mock-proxy',
+            'payment-required': Buffer.from(
+              JSON.stringify({
+                x402Version: 2,
+                resource: { url: 'https://modu-proxy.onrender.com/p/test-v2' },
+                accepts: [
+                  {
+                    scheme: 'exact',
+                    network: 'algorand:SGO1GKSzyE7IEPItTxCByw9x8FmnrCDexi9/cOUJOiI=',
+                    amount: '120000',
+                    asset: '10458941',
+                    payTo: 'YAVQWCPKM6D4HR63K7GYTR5AFR727RCA3VNWSMSJ7VTUJHNRRHEIIJJP4A',
+                    maxTimeoutSeconds: 300,
+                    extra: { name: 'USDC', decimals: 6 },
+                  },
+                ],
+              })
+            ).toString('base64'),
+          });
+          res.end(
+            JSON.stringify({
+              x402Version: 2,
+              resource: { url: 'https://modu-proxy.onrender.com/p/test-v2' },
+              accepts: [
+                {
+                  scheme: 'exact',
+                  network: 'algorand:SGO1GKSzyE7IEPItTxCByw9x8FmnrCDexi9/cOUJOiI=',
+                  amount: '120000',
+                  asset: '10458941',
+                  payTo: 'YAVQWCPKM6D4HR63K7GYTR5AFR727RCA3VNWSMSJ7VTUJHNRRHEIIJJP4A',
+                  maxTimeoutSeconds: 300,
+                  extra: { name: 'USDC', decimals: 6 },
+                },
+              ],
+            })
+          );
+          return;
+        }
+
         // Return 402 challenge
         res.writeHead(402, {
           'Content-Type': 'application/json; charset=utf-8',
@@ -182,6 +224,57 @@ describe('modu get Command & x402 Browser Payment Flow', () => {
       await getPromise;
 
       // Verify the proxy received the confirmed transaction ID
+      assert.equal(receivedTxid, testTxid);
+    } finally {
+      console.log = originalLog;
+    }
+  });
+
+  it('receives x402 v2 challenge without nonce, serves payment page, handles /api/complete, and retrieves paid response', async () => {
+    receivedTxid = null;
+    const testTxid = 'CONFIRMED_V2_TXID_5VHQPKCJJIUYBGV2ZJACAMEFGBFHPATT6JBIWPYVQ7VZD5XLXZDA';
+
+    const originalLog = console.log;
+    let localPayUrl = '';
+    console.log = (...args: any[]) => {
+      originalLog(...args);
+      const str = args.join(' ');
+      const match = str.match(/http:\/\/127\.0\.0\.1:\d+\/pay/);
+      if (match) {
+        localPayUrl = match[0];
+      }
+    };
+
+    try {
+      const getPromise = getCommand(`${mockServerUrl}/v2`, {
+        autoOpen: false,
+        timeoutMs: 10_000,
+      });
+
+      const startTime = Date.now();
+      while (!localPayUrl && Date.now() - startTime < 4000) {
+        await new Promise((r) => setTimeout(r, 50));
+      }
+
+      assert(localPayUrl, 'Local payment server URL should have been printed for v2 challenge');
+
+      // 1. Verify GET /pay serves HTML with amount and asset from v2 extra
+      const payRes = await fetch(localPayUrl);
+      assert.equal(payRes.status, 200);
+      const payHtml = await payRes.text();
+      assert(payHtml.includes('Lute Payment Approval'));
+      assert(payHtml.includes('0.12 USDC'));
+
+      // 2. Complete payment callback
+      const completeUrl = localPayUrl.replace('/pay', '/api/complete');
+      const completeRes = await fetch(completeUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ txid: testTxid }),
+      });
+      assert.equal(completeRes.status, 200);
+
+      await getPromise;
       assert.equal(receivedTxid, testTxid);
     } finally {
       console.log = originalLog;
