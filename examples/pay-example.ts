@@ -83,6 +83,16 @@ async function main() {
   const challenge = await initialResponse.json() as any;
   console.log(JSON.stringify(challenge, null, 2));
 
+  const accept = challenge.accepts?.[0];
+  if (accept && (accept.asset === '0' || accept.extra?.name === 'ALGO')) {
+    console.error('\n⚠️  Notice: The GoPlausible x402 Facilitator standard is designed for Algorand Standard Assets (USDC ASA 10458941), not native ALGO.');
+    console.error('To pay for this ALGO-denominated endpoint, use the browser Lute wallet flow:');
+    console.error(`  modu get ${targetUrl}`);
+    console.error('\nTo test with this automated x402 facilitator script, call a USDC endpoint:');
+    console.error('  npx tsx examples/pay-example.ts https://modu-proxy.onrender.com/p/test-usdc');
+    return;
+  }
+
   // Initialize client-side signer and x402 payment client
   const signer = toClientAvmSigner(privateKey);
   console.log(`\n[3/4] Initialized Algorand client signer for address: ${signer.address}`);
