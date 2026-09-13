@@ -21,6 +21,7 @@ describe('payClient Unit Tests (x402 Payment Flow)', () => {
     | '402_valid_then_facilitator_fail' = '200_ok';
 
   let receivedPaymentHeader: string | null = null;
+  let receivedTxidHeader: string | null = null;
 
   const validChallenge: X402Challenge = {
     x402Version: 2,
@@ -48,6 +49,24 @@ describe('payClient Unit Tests (x402 Payment Flow)', () => {
   before(async () => {
     mockServer = http.createServer((req, res) => {
       const paymentHeader = req.headers['x-payment'] as string | undefined;
+      const txidHeader = req.headers['x-payment-txid'] as string | undefined;
+
+      if (txidHeader) {
+        receivedTxidHeader = txidHeader;
+        res.writeHead(200, {
+          'Content-Type': 'application/json',
+          'x-payment-response': JSON.stringify({
+            status: 'settled',
+            txid: txidHeader,
+            payer: 'TEST_ALGO_PAYER_ADDRESS',
+            amount: '1000000',
+            asset: '0',
+            timestamp: new Date().toISOString(),
+          }),
+        });
+        res.end(JSON.stringify({ success: true, data: 'premium algo data' }));
+        return;
+      }
 
       if (paymentHeader) {
         receivedPaymentHeader = paymentHeader;
@@ -241,16 +260,30 @@ describe('payClient Unit Tests (x402 Payment Flow)', () => {
     );
   });
 
-  // 8. 402 Challenge parsing: Rejects native ALGO
-  it('throws descriptive error when endpoint requires native ALGO instead of ASA/USDC', async () => {
+  // 8. Native ALGO payment flow
+  it('successfully signs and settles native ALGO payment using X-PAYMENT-TXID', async () => {
     responseMode = '402_algo_asset';
-    await assert.rejects(
-      callPaidEndpoint(mockServerUrl),
-      (err: Error) => {
-        assert(err.message.includes('native ALGO payment, which is not supported'));
-        return true;
-      }
-    );
+    receivedTxidHeader = null;
+
+    let sendAlgoPaymentCalled = false;
+    const result = await callPaidEndpoint(mockServerUrl, {
+      mnemonic:
+        'wire shuffle tiger resemble globe shift stay lift imitate logic spring mask alcohol speak garden method ribbon subject drama mango ice there tent about egg',
+      sendAlgoPayment: async (params) => {
+        sendAlgoPaymentCalled = true;
+        assert.equal(params.amountMicro, '1000000');
+        assert.equal(params.to, 'YAVQWCPKM6D4HR63K7GYTR5AFR727RCA3VNWSMSJ7VTUJHNRRHEIIJJP4A');
+        return 'MOCK_ALGO_TXID_1234567890ABCDEF';
+      },
+    });
+
+    assert.equal(sendAlgoPaymentCalled, true);
+    assert.equal(result.settled, true);
+    assert.equal(result.txid, 'MOCK_ALGO_TXID_1234567890ABCDEF');
+    assert.equal(result.asset, '0');
+    assert.equal(result.amount, '1000000');
+    assert.deepEqual(result.responseBody, { success: true, data: 'premium algo data' });
+    assert.equal(receivedTxidHeader, 'MOCK_ALGO_TXID_1234567890ABCDEF');
   });
 
   // 9. Confirmation gate: Rejects when confirmBeforePay returns false

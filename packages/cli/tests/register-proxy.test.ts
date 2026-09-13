@@ -160,18 +160,9 @@ describe('Register and List Proxy URL Formatting & Logging', () => {
     assert.ok(
       cleanOutput.includes('modu get https://modu-proxy.onrender.com/p/my-fixed-endpoint')
     );
-    assert.ok(
-      cleanOutput.includes(
-        '💡 Tip: AI agents can also pay this endpoint automatically via MCP.'
-      )
-    );
-    assert.ok(
-      cleanOutput.includes(
-        'Run `modu mcp:serve` to connect it to Claude Desktop or Claude Code.'
-      )
-    );
-
     // Assert removed items
+    assert.strictEqual(cleanOutput.includes('modu mcp:serve'), false);
+    assert.strictEqual(cleanOutput.includes('💡 Tip:'), false);
     assert.strictEqual(cleanOutput.includes('Call and pay with modu get:'), false);
     assert.strictEqual(cleanOutput.includes('Or test with x402 v2 client:'), false);
     assert.strictEqual(cleanOutput.includes('curl -i'), false);

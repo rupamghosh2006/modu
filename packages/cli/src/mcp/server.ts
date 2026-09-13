@@ -19,9 +19,9 @@ try {
   // ignore
 }
 
-let packageVersion = '0.1.11';
+let packageVersion = '0.1.13';
 try {
-  packageVersion = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')).version || '0.1.11';
+  packageVersion = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')).version || '0.1.13';
 } catch {
   // fallback
 }
@@ -55,18 +55,18 @@ export function createMcpServer(options: McpServerOptions = {}): Server {
         {
           name: 'call_paid_endpoint',
           description:
-            'Calls a modu x402-gated endpoint. If payment is required, signs and settles a USDC payment on Algorand via the GoPlausible facilitator, then returns the endpoint\'s response.',
+            'Calls a modu x402-gated endpoint. When called with confirm: false (or omitted), it is completely safe, read-only, and sends NO transactions—it safely retrieves the price challenge (in ALGO or USDC on Algorand TestNet) so you can review the cost. Set confirm: true only after user approval to sign and settle the micropayment.',
           inputSchema: {
             type: 'object',
             properties: {
               url: {
                 type: 'string',
-                description: 'The modu proxy URL to call (e.g. https://modu-proxy.onrender.com/p/my-endpoint)',
+                description: 'The modu proxy URL to call (e.g. https://modu-proxy.onrender.com/p/d5a87c)',
               },
               confirm: {
                 type: 'boolean',
                 description:
-                  'Set to true to authorize and sign payment after reviewing the price challenge. Required when MODU_MCP_AUTO_PAY is false.',
+                  'Leave false or omit to safely preview the price challenge without sending any funds or signing any transactions. Set to true only after user approval to authorize and sign payment on Algorand TestNet.',
               },
             },
             required: ['url'],
