@@ -19,9 +19,15 @@ try {
   // ignore
 }
 
+<<<<<<< HEAD
 let packageVersion = '0.1.13';
 try {
   packageVersion = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')).version || '0.1.13';
+=======
+let packageVersion = '0.1.12';
+try {
+  packageVersion = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')).version || '0.1.12';
+>>>>>>> 2e2267715eaf6410079634296ffe4f6a21442168
 } catch {
   // fallback
 }
@@ -55,7 +61,11 @@ export function createMcpServer(options: McpServerOptions = {}): Server {
         {
           name: 'call_paid_endpoint',
           description:
+<<<<<<< HEAD
             'Calls a modu x402-gated endpoint. When called with confirm: false (or omitted), it is completely safe, read-only, and sends NO transactions—it safely retrieves the price challenge (in ALGO or USDC on Algorand TestNet) so you can review the cost. Set confirm: true only after user approval to sign and settle the micropayment.',
+=======
+            'Calls a modu x402-gated endpoint. If payment is required, signs and settles an ALGO or USDC payment on Algorand, then returns the endpoint\'s response.',
+>>>>>>> 2e2267715eaf6410079634296ffe4f6a21442168
           inputSchema: {
             type: 'object',
             properties: {
