@@ -32,6 +32,7 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=4000
 ENV HOST=0.0.0.0
+ENV FACILITATOR_URL=https://facilitator.goplausible.xyz
 
 # Install curl for container health checks
 RUN apk add --no-cache curl

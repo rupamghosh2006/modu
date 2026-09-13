@@ -881,7 +881,7 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
   // Claim nonce & txid (single-use validation)
   app.post('/api/internal/claim-payment', async (req, reply) => {
     const { nonce, txid, endpointId } = req.body as {
-      nonce: string;
+      nonce?: string;
       txid: string;
       endpointId: string;
     };
@@ -891,10 +891,14 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
       return;
     }
 
-    const claimedEndpointId = await store.claimNonce(nonce);
-    if (!claimedEndpointId || claimedEndpointId !== endpointId) {
-      reply.status(400).send({ error: 'Invalid or expired nonce' });
-      return;
+    // In x402 v2, payments are verified and settled via atomic transaction groups on-chain.
+    // Nonce validation is only performed for legacy v1 payments with client-embedded nonces.
+    if (nonce && nonce !== 'v2-settled') {
+      const claimedEndpointId = await store.claimNonce(nonce);
+      if (!claimedEndpointId || claimedEndpointId !== endpointId) {
+        reply.status(400).send({ error: 'Invalid or expired nonce' });
+        return;
+      }
     }
 
     await store.recordSpentTxid(txid, endpointId);

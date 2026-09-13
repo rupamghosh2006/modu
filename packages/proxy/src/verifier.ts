@@ -1,3 +1,15 @@
+/**
+ * @deprecated Legacy local Algorand payment verifier and indexer client.
+ *
+ * Modu's primary payment flow has migrated to the official x402 v2 "exact" AVM scheme
+ * backed by the GoPlausible facilitator (https://facilitator.goplausible.xyz).
+ *
+ * This verifier is retained for:
+ * 1. Backwards-compatibility in environments without external facilitator connectivity
+ *    (activated via USE_LOCAL_VERIFIER=true).
+ * 2. Standalone testing and local indexer transaction verification.
+ */
+
 import {
   ALGORAND_ALGO_ASSET_ID,
   ALGORAND_TESTNET_USDC_ASA_ID,

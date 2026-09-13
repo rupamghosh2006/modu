@@ -2,19 +2,30 @@ export type AssetType = 'USDC' | 'ALGO';
 
 export interface PaymentAccept {
   scheme: 'exact';
-  network: 'algorand-testnet' | 'algorand-mainnet';
-  maxAmountRequired: string; // in micro-units (e.g. 10000 = 0.01 USDC)
+  network: string; // CAIP-2 (e.g. 'algorand:SGO1GKSzyE7IEPItTxCByw9x8FmnrCDexi9/cOUJOiI=') or legacy ('algorand-testnet')
+  amount?: string; // x402 v2 standard: atomic micro-units
+  maxAmountRequired?: string; // x402 v1 / legacy: in micro-units (e.g. 10000 = 0.01 USDC)
   asset: string; // ASA ID string or "0" for ALGO
   payTo: string; // Algorand address
-  resource: string; // URL being accessed
-  description: string;
+  resource?: string; // URL being accessed
+  description?: string;
+  mimeType?: string;
   maxTimeoutSeconds: number;
   nonce?: string;
+  outputSchema?: Record<string, unknown> | null;
+  extra?: Record<string, unknown>;
 }
 
 export interface X402Challenge {
   x402Version: number;
+  error?: string;
+  resource?: {
+    url: string;
+    description?: string;
+    mimeType?: string;
+  };
   accepts: PaymentAccept[];
+  extensions?: Record<string, unknown>;
 }
 
 export interface PaymentReceipt {

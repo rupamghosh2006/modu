@@ -9,7 +9,7 @@
 
 `modu` is a developer tool and edge reverse proxy that allows developers to turn any existing HTTP API endpoint into a pay-per-request endpoint settled in Algorand USDC (or ALGO) with **zero payment code** written by the developer.
 
-The CLI communicates with a Fastify control-plane API to register origin URLs and issue proxy endpoints. The edge reverse proxy enforces the **x402 micropayment protocol** (`HTTP 402 Payment Required` challenge → signed on-chain payment → retry with `X-PAYMENT-TXID` → `200 OK` with verbatim streaming response + `X-PAYMENT-RESPONSE` settlement receipt).
+The CLI communicates with a Fastify control-plane API to register origin URLs and issue proxy endpoints. The edge reverse proxy enforces the official **x402 v2 micropayment protocol** backed by the **GoPlausible facilitator** (`HTTP 402 Payment Required` challenge → client-signed atomic transaction group via `X-PAYMENT` header → facilitator verification & on-chain settlement → `200 OK` with verbatim streaming response + `X-PAYMENT-RESPONSE` settlement receipt).
 
 ---
 
@@ -113,8 +113,8 @@ Or test manually with curl:
 # 1. Call endpoint without payment — receive HTTP 402 challenge:
   curl -i https://modu-proxy.onrender.com/p/f21408
 
-# 2. Call endpoint with confirmed Algorand payment txid:
-  curl -i -H "X-PAYMENT-TXID: <txid>" https://modu-proxy.onrender.com/p/f21408
+# 2. Call endpoint with signed atomic transaction group payload (via X-PAYMENT):
+  curl -i -H "X-PAYMENT: <base64-payment-payload>" https://modu-proxy.onrender.com/p/f21408
 ```
 
 ### 4. Call & Pay via `modu get`
@@ -190,8 +190,8 @@ Try it with curl:
 # 1. Request without payment (HTTP 402 challenge):
 curl -i https://modu-proxy.onrender.com/p/f21408
 
-# 2. Request with Algorand payment txid:
-curl -i -H "X-PAYMENT-TXID: <txid>" https://modu-proxy.onrender.com/p/f21408
+# 2. Request with signed atomic transaction group payload (via X-PAYMENT):
+curl -i -H "X-PAYMENT: <base64-payment-payload>" https://modu-proxy.onrender.com/p/f21408
 ```
 
 ### 3. `modu get <url>` (alias: `modu call <url>`)
@@ -265,32 +265,37 @@ modu wallet connect 2UBKCS6GMACWVLAXDZZ47A46K452Z47H4VNLFDE6K7U7N7Y5P67G3RTHQ4
 ## The x402 Protocol Flow
 
 ```
-   Consumer                       Proxy                        Origin API
-      │                             │                              │
-      ├──── GET /p/my-endpoint ────►│                              │
-      │                             │                              │
-      │◄─── 402 Payment Required ───┤                              │
-      │     (x402 spec with nonce)  │                              │
-      │                             │                              │
-      │                             │                              │
- [Algorand Blockchain]              │                              │
-      │                             │                              │
-      ├─► Sends ASA USDC transfer   │                              │
-      │   with Note: "modu:<nonce>" │                              │
-      │                             │                              │
-      │                             │                              │
-      ├──── GET /p/my-endpoint ────►│                              │
-      │     Header: X-PAYMENT-TXID  │                              │
-      │                             ├─ Indexer verifies tx & round │
-      │                             ├─ Validates receiver & amount │
-      │                             ├─ Marks nonce/txid spent      │
-      │                             │                              │
-      │                             ├──── Forward req stream ─────►│
-      │                             │◄─── Stream origin response ──┤
-      │                             │                              │
-      │◄─── 200 OK + Stream ────────┤                              │
-      │     Header:                 │                              │
-      │     X-PAYMENT-RESPONSE      │                              │
+   Consumer                         Proxy                   GoPlausible Facilitator         Origin API
+      │                               │                                │                        │
+      ├───── GET /p/my-endpoint ─────►│                                │                        │
+      │                               │                                │                        │
+      │◄──── 402 Payment Required ────┤                                │                        │
+      │      (x402 v2 exact scheme,   │                                │                        │
+      │       CAIP-2 network & terms) │                                │                        │
+      │                               │                                │                        │
+ [Signs atomic txn group locally]     │                                │                        │
+      │                               │                                │                        │
+      ├───── GET /p/my-endpoint ─────►│                                │                        │
+      │      Header: X-PAYMENT        │                                │                        │
+      │      (base64 PaymentPayload)  │                                │                        │
+      │                               ├─ POST /verify ────────────────►│                        │
+      │                               │  (simulates group on-chain)    │                        │
+      │                               │◄─ { isValid: true } ───────────┤                        │
+      │                               │                                │                        │
+      │                               ├─ POST /settle ────────────────►│                        │
+      │                               │  (co-signs fee-payer txn and   │                        │
+      │                               │   broadcasts to Algorand)      │                        │
+      │                               │◄─ { success: true, txid, ... }─┤                        │
+      │                               │                                │                        │
+      │                               ├─ Replay check (txid spent)     │                        │
+      │                               │                                │                        │
+      │                               ├────────── Forward req stream ──────────────────────────►│
+      │                               │◄───────── Stream origin response ───────────────────────┤
+      │                               │                                │                        │
+      │◄──── 200 OK + Stream ─────────┤                                │                        │
+      │      Headers:                 │                                │                        │
+      │      X-PAYMENT-RESPONSE       │                                │                        │
+      │      PAYMENT-RESPONSE         │                                │                        │
 ```
 
 ---
@@ -360,11 +365,26 @@ This repository includes a [`render.yaml`](./render.yaml) Blueprint that defines
    - Set variables: `PORT=3000`, `HOST=0.0.0.0`, `MODU_STORE_PATH=/data/control-plane-store.json`
 4. Add **Service 2 (Proxy)**:
    - Build Source: Select `Dockerfile.proxy`
-   - Set variables: `CONTROL_PLANE_URL=https://${{modu-control-plane.RAILWAY_PUBLIC_DOMAIN}}`, `PROXY_URL=https://${{RAILWAY_PUBLIC_DOMAIN}}`
+   - Set variables: `CONTROL_PLANE_URL=https://${{modu-control-plane.RAILWAY_PUBLIC_DOMAIN}}`, `PROXY_URL=https://${{RAILWAY_PUBLIC_DOMAIN}}`, `FACILITATOR_URL=https://facilitator.goplausible.xyz`
 
 ---
 
-### 4. Connecting Your Local CLI to the Cloud Backends
+### 4. Edge Proxy Environment Variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `PORT` | `4000` | HTTP port for the edge proxy |
+| `HOST` | `0.0.0.0` | Host interface to bind |
+| `CONTROL_PLANE_URL` | `https://modu-to68.onrender.com` | Upstream control-plane URL for endpoint lookups & logs |
+| `PROXY_URL` | `https://modu-proxy.onrender.com` | Public base URL of the proxy (used in challenges) |
+| `FACILITATOR_URL` | `https://facilitator.goplausible.xyz` | GoPlausible x402 facilitator endpoint for `/verify` & `/settle` |
+| `NETWORK` | `algorand:SGO1GKSzyE7IEPItTxCByw9x8FmnrCDexi9/cOUJOiI=` | Target Algorand CAIP-2 network (TestNet or MainNet) |
+| `CHALLENGE_TIMEOUT_SECONDS` | `300` | Expiration window (seconds) for 402 payment requirements |
+| `USE_LOCAL_VERIFIER` | `false` | Enable legacy local indexer verifier fallback path |
+
+---
+
+### 5. Connecting Your Local CLI to the Cloud Backends
 
 Once deployed, set environment variables to point your CLI to the live services:
 

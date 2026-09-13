@@ -13,6 +13,8 @@
   "dependencies": {
     "@fastify/cors": "^9.0.1",
     "@modu/shared": "*",
+    "@x402/avm": "^2.25.0",
+    "@x402/core": "^2.25.0",
     "algosdk": "^2.7.0",
     "fastify": "^4.27.0",
     "undici": "^6.19.0"

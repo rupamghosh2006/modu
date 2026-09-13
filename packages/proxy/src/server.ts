@@ -3,8 +3,12 @@ import cors from '@fastify/cors';
 import {
   ALGORAND_ALGO_ASSET_ID,
   ALGORAND_TESTNET_USDC_ASA_ID,
+  ALGORAND_MAINNET_USDC_ASA_ID,
+  ALGORAND_TESTNET_CAIP2,
+  ALGORAND_MAINNET_CAIP2,
   DEFAULT_CONTROL_PLANE_URL,
   DEFAULT_PROXY_URL,
+  DEFAULT_FACILITATOR_URL,
   DEFAULT_NETWORK,
   DEFAULT_CHALLENGE_TIMEOUT_SECONDS,
   DECIMALS,
@@ -14,6 +18,12 @@ import {
   PaymentReceipt,
   X402Challenge,
 } from '@modu/shared';
+import {
+  HTTPFacilitatorClient,
+  x402ResourceServer,
+  FacilitatorClient,
+} from '@x402/core/server';
+import { ExactAvmScheme } from '@x402/avm/exact/server';
 import { AlgorandPaymentVerifier, IndexerClient } from './verifier.js';
 import { forwardStream } from './forwarder.js';
 
@@ -22,13 +32,19 @@ export interface ProxyServerOptions {
   host?: string;
   controlPlaneUrl?: string;
   proxyUrl?: string;
+  facilitatorUrl?: string;
+  facilitatorClient?: FacilitatorClient;
+  network?: string;
+  useLocalVerifier?: boolean;
   indexerClient?: IndexerClient;
   // Optional direct resolver for testing or in-process mode
   endpointResolver?: (identifier: string) => Promise<any | null>;
   logSink?: (log: any) => Promise<void>;
   nonceStore?: {
-    saveNonce: (nonce: string, endpointId: string, expiresAt: Date) => Promise<void>;
-    claimPayment: (nonce: string, txid: string, endpointId: string) => Promise<{ success: boolean; error?: string }>;
+    saveNonce?: (nonce: string, endpointId: string, expiresAt: Date) => Promise<void>;
+    claimPayment?: (nonce: string, txid: string, endpointId: string) => Promise<{ success: boolean; error?: string }>;
+    isTxidSpent?: (txid: string) => Promise<boolean>;
+    recordSpentTxid?: (txid: string, endpointId: string) => Promise<void>;
   };
 }
 
@@ -43,13 +59,63 @@ export function buildProxyServer(options: ProxyServerOptions = {}): FastifyInsta
     proxyBaseUrl = `https://${proxyBaseUrl}`;
   }
 
-  const verifier = new AlgorandPaymentVerifier(options.indexerClient);
+  const facilitatorUrl = (
+    options.facilitatorUrl ||
+    process.env.FACILITATOR_URL ||
+    DEFAULT_FACILITATOR_URL
+  ).replace(/\/$/, '');
+
+  // Facilitator client (injected for unit testing or HTTP-based default)
+  const facilitatorClient: FacilitatorClient =
+    options.facilitatorClient ||
+    new HTTPFacilitatorClient({ url: facilitatorUrl });
+
+  // Optional local verifier fallback (USE_LOCAL_VERIFIER=true)
+  const useLocalVerifier =
+    options.useLocalVerifier ?? (process.env.USE_LOCAL_VERIFIER === 'true');
+  const localVerifier = new AlgorandPaymentVerifier(options.indexerClient);
+
+  // Network resolution: prefer CAIP-2 identifiers
+  const rawNetwork = options.network || process.env.NETWORK || DEFAULT_NETWORK;
+  const targetNetwork =
+    rawNetwork === 'algorand-mainnet' || rawNetwork === ALGORAND_MAINNET_CAIP2
+      ? ALGORAND_MAINNET_CAIP2
+      : ALGORAND_TESTNET_CAIP2;
+
+  const isMainnet = targetNetwork === ALGORAND_MAINNET_CAIP2;
 
   const app = Fastify({
     logger: false,
   });
 
   app.register(cors, { origin: true });
+
+  // Cache for dynamic facilitator /supported query (feePayer addresses)
+  let cachedSupported: { kinds?: any[]; signers?: Record<string, string[]> } | null = null;
+  let supportedExpiresAt = 0;
+
+  async function getFacilitatorFeePayer(network: string): Promise<string | undefined> {
+    const now = Date.now();
+    if (!cachedSupported || supportedExpiresAt <= now) {
+      try {
+        const supported = await facilitatorClient.getSupported();
+        cachedSupported = supported as any;
+        supportedExpiresAt = now + 60_000; // Cache for 1 minute
+      } catch {
+        // External facilitator /supported call failed or not reachable; proceed without dynamic feePayer
+      }
+    }
+    if (cachedSupported?.kinds) {
+      const match = cachedSupported.kinds.find((k: any) => k.network === network);
+      if (match?.extra?.feePayer) {
+        return match.extra.feePayer as string;
+      }
+    }
+    if (cachedSupported?.signers?.['algorand:*']?.[0]) {
+      return cachedSupported.signers['algorand:*'][0];
+    }
+    return undefined;
+  }
 
   // In-memory endpoint cache to eliminate roundtrip latency to control-plane
   interface CachedEndpoint {
@@ -90,41 +156,67 @@ export function buildProxyServer(options: ProxyServerOptions = {}): FastifyInsta
     }
   }
 
-  // Save challenge nonce
-  async function saveChallengeNonce(nonce: string, endpointId: string, ttlSeconds: number) {
-    if (options.nonceStore) {
-      const expiresAt = new Date(Date.now() + ttlSeconds * 1000);
-      return await options.nonceStore.saveNonce(nonce, endpointId, expiresAt);
-    }
-    try {
-      await fetch(`${controlPlaneUrl}/api/internal/nonces`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ nonce, endpointId, ttlSeconds }),
-      });
-    } catch (e) {
-      // ignore
-    }
-  }
+  // ---------------------------------------------------------------------------
+  // Replay Protection & Defense-in-Depth
+  // ---------------------------------------------------------------------------
+  // In the official x402 v2 exact AVM scheme, transactions are signed as atomic
+  // transaction groups with explicit firstValid/lastValid rounds and unique txids.
+  // When settled by the facilitator, the Algorand blockchain natively enforces
+  // single-use execution (subsequent broadcast returns 'tx already in ledger').
+  //
+  // As defense-in-depth, modu proxy records and verifies the settled transaction ID
+  // against the control plane to prevent replay attempts across proxy instances,
+  // while retiring the old requirement for client-side 'modu:<nonce>' note embedding.
+  const inMemorySpentTxids = new Set<string>();
 
-  // Claim payment (txid + nonce)
-  async function claimPayment(nonce: string, txid: string, endpointId: string) {
-    if (options.nonceStore) {
-      return await options.nonceStore.claimPayment(nonce, txid, endpointId);
+  async function claimSettledPayment(txid: string, endpointId: string): Promise<{ success: boolean; error?: string }> {
+    if (inMemorySpentTxids.has(txid)) {
+      return { success: false, error: 'Payment transaction has already been spent' };
     }
+
+    if (options.nonceStore?.isTxidSpent) {
+      const spent = await options.nonceStore.isTxidSpent(txid);
+      if (spent) {
+        return { success: false, error: 'Payment transaction has already been spent' };
+      }
+      if (options.nonceStore.recordSpentTxid) {
+        await options.nonceStore.recordSpentTxid(txid, endpointId);
+      }
+      inMemorySpentTxids.add(txid);
+      return { success: true };
+    }
+
+    if (options.nonceStore?.claimPayment) {
+      const res = await options.nonceStore.claimPayment('v2-settled', txid, endpointId);
+      if (res.success) inMemorySpentTxids.add(txid);
+      return res;
+    }
+
     try {
       const res = await fetch(`${controlPlaneUrl}/api/internal/claim-payment`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ nonce, txid, endpointId }),
+        body: JSON.stringify({ nonce: 'v2-settled', txid, endpointId }),
       });
       if (!res.ok) {
-        const err = await res.json().catch(() => ({ error: 'Claim failed' })) as any;
+        const err = (await res.json().catch(() => ({ error: 'Claim failed' }))) as any;
+        if (err.error === 'Transaction ID has already been spent') {
+          return { success: false, error: err.error };
+        }
+        // Legacy control-plane deployments reject unknown nonces with "Invalid or expired nonce".
+        // In x402 v2, Algorand transactions are already confirmed single-use on chain.
+        if (err.error === 'Invalid or expired nonce') {
+          inMemorySpentTxids.add(txid);
+          return { success: true };
+        }
         return { success: false, error: err.error || 'Payment claim rejected' };
       }
+      inMemorySpentTxids.add(txid);
       return { success: true };
-    } catch (e: any) {
-      return { success: false, error: e.message };
+    } catch {
+      // If control plane is momentarily unreachable, do not fail a verified & settled on-chain payment
+      inMemorySpentTxids.add(txid);
+      return { success: true };
     }
   }
 
@@ -145,7 +237,12 @@ export function buildProxyServer(options: ProxyServerOptions = {}): FastifyInsta
   }
 
   // Health check
-  app.get('/health', async () => ({ status: 'ok', service: 'modu-proxy' }));
+  app.get('/health', async () => ({
+    status: 'ok',
+    service: 'modu-proxy',
+    facilitatorUrl,
+    network: targetNetwork,
+  }));
 
   // Main proxy route: matches /p/:slug and /p/:slug/*
   app.all('/p/:slug', handleProxy);
@@ -163,73 +260,230 @@ export function buildProxyServer(options: ProxyServerOptions = {}): FastifyInsta
       return reply.status(410).send({ error: 'Endpoint revoked' });
     }
 
-    const expectedAssetId = endpoint.asset === 'ALGO' ? ALGORAND_ALGO_ASSET_ID : ALGORAND_TESTNET_USDC_ASA_ID;
+    const expectedAssetId =
+      endpoint.asset === 'ALGO'
+        ? ALGORAND_ALGO_ASSET_ID
+        : isMainnet
+        ? ALGORAND_MAINNET_USDC_ASA_ID
+        : ALGORAND_TESTNET_USDC_ASA_ID;
+
+    const assetName = endpoint.asset === 'ALGO' ? 'ALGO' : 'USDC';
     const decimals = DECIMALS[endpoint.asset] || 6;
     const expectedAmountMicro = toBaseUnits(endpoint.price, decimals);
     const resourceUrl = `${proxyBaseUrl}/p/${endpoint.slug}`;
+    const challengeTimeout =
+      parseInt(process.env.CHALLENGE_TIMEOUT_SECONDS || '', 10) ||
+      DEFAULT_CHALLENGE_TIMEOUT_SECONDS;
 
+    // Check incoming payment headers:
+    // x402 v2 standard: 'x-payment' or 'payment-signature' (base64 JSON PaymentPayload)
+    // Legacy fallback: 'x-payment-txid' (only if USE_LOCAL_VERIFIER=true)
+    const paymentHeader = (req.headers['x-payment'] || req.headers['payment-signature']) as
+      | string
+      | undefined;
     const txidHeader = req.headers['x-payment-txid'] as string | undefined;
 
-    // If unpaid: issue 402 challenge
-    if (!txidHeader) {
-      const nonce = generateNonce(16);
-      const challengeTimeout = parseInt(process.env.CHALLENGE_TIMEOUT_SECONDS || '', 10) || DEFAULT_CHALLENGE_TIMEOUT_SECONDS;
-      await saveChallengeNonce(nonce, endpoint.id, challengeTimeout);
+    // Optional legacy local verifier path for backwards-compatibility
+    if (useLocalVerifier && txidHeader && !paymentHeader) {
+      const startTime = Date.now();
+      const verification = await localVerifier.verify({
+        txid: txidHeader.trim(),
+        expectedReceiver: endpoint.payoutAddress,
+        expectedAmountMicro,
+        expectedAsset: expectedAssetId,
+      });
+
+      if (!verification.valid) {
+        return reply.status(402).send({
+          error: 'Payment Required',
+          message: verification.error || 'Payment verification failed',
+        });
+      }
+
+      const claimResult = await claimSettledPayment(txidHeader.trim(), endpoint.id);
+      if (!claimResult.success) {
+        return reply.status(402).send({
+          error: 'Payment Required',
+          message: claimResult.error || 'Payment has already been used',
+        });
+      }
+
+      const fullPath = req.url;
+      const prefix = `/p/${slug}`;
+      const subpath = fullPath.startsWith(prefix) ? fullPath.slice(prefix.length) : '';
+      const cleanOrigin = endpoint.originUrl.replace(/\/$/, '');
+      const targetUrl = `${cleanOrigin}${subpath}`;
+
+      const receipt: PaymentReceipt = {
+        status: 'settled',
+        txid: txidHeader.trim(),
+        payer: verification.payer || '',
+        amount: verification.amount || expectedAmountMicro,
+        asset: verification.asset || expectedAssetId,
+        timestamp: new Date().toISOString(),
+      };
+
+      reply.raw.on('finish', () => {
+        const latencyMs = Date.now() - startTime;
+        reportLog({
+          endpointId: endpoint.id,
+          payerAddress: verification.payer || '',
+          txid: txidHeader.trim(),
+          amount: verification.amount || expectedAmountMicro,
+          status: reply.raw.statusCode || 200,
+          latencyMs,
+        });
+      });
+
+      return await forwardStream(req, reply, { targetUrl, receipt });
+    }
+
+    // -------------------------------------------------------------------------
+    // 1. Unpaid Request: Issue official x402 v2 PaymentRequired Challenge
+    // -------------------------------------------------------------------------
+    if (!paymentHeader) {
+      const feePayer = await getFacilitatorFeePayer(targetNetwork);
 
       const challenge: X402Challenge = {
         x402Version: X402_VERSION,
+        resource: {
+          url: resourceUrl,
+          description: 'modu-proxied API call',
+          mimeType: 'application/json',
+        },
         accepts: [
           {
             scheme: 'exact',
-            network: DEFAULT_NETWORK as any,
+            network: targetNetwork,
+            amount: expectedAmountMicro,
             maxAmountRequired: expectedAmountMicro,
             asset: expectedAssetId,
             payTo: endpoint.payoutAddress,
             resource: resourceUrl,
             description: 'modu-proxied API call',
+            mimeType: 'application/json',
             maxTimeoutSeconds: challengeTimeout,
-            nonce,
+            extra: {
+              name: assetName,
+              decimals,
+              ...(feePayer ? { feePayer } : {}),
+            },
           },
         ],
       };
 
+      // Set standard PAYMENT-REQUIRED base64 header alongside JSON response body
+      try {
+        const encoded = Buffer.from(JSON.stringify(challenge)).toString('base64');
+        reply.header('PAYMENT-REQUIRED', encoded);
+      } catch {
+        // ignore
+      }
+
       return reply.status(402).type('application/json').send(challenge);
     }
 
-    // Payment proof provided: verify transaction
+    // -------------------------------------------------------------------------
+    // 2. Paid Request: Decode and Validate PaymentPayload
+    // -------------------------------------------------------------------------
+    let paymentPayload: any;
+    try {
+      const raw = paymentHeader.trim();
+      const jsonStr = /^[A-Za-z0-9+/=_-]+$/.test(raw)
+        ? Buffer.from(raw, 'base64').toString('utf8')
+        : raw;
+      paymentPayload = JSON.parse(jsonStr);
+    } catch {
+      return reply.status(400).send({
+        error: 'Invalid Payment Header',
+        message: 'Could not decode or parse X-PAYMENT header as base64 JSON',
+      });
+    }
+
+    const feePayer = await getFacilitatorFeePayer(targetNetwork);
+    const paymentRequirements = {
+      scheme: 'exact',
+      network: targetNetwork,
+      amount: expectedAmountMicro,
+      maxAmountRequired: expectedAmountMicro,
+      asset: expectedAssetId,
+      payTo: endpoint.payoutAddress,
+      resource: resourceUrl,
+      description: 'modu-proxied API call',
+      mimeType: 'application/json',
+      maxTimeoutSeconds: challengeTimeout,
+      extra: {
+        name: assetName,
+        decimals,
+        ...(feePayer ? { feePayer } : {}),
+      },
+    };
+
+    // -------------------------------------------------------------------------
+    // 3. Facilitator Verification (Simulates atomic group without broadcasting)
+    // -------------------------------------------------------------------------
     const startTime = Date.now();
-    const verification = await verifier.verify({
-      txid: txidHeader.trim(),
-      expectedReceiver: endpoint.payoutAddress,
-      expectedAmountMicro,
-      expectedAsset: expectedAssetId,
-    });
-
-    if (!verification.valid) {
+    let verifyResult: any;
+    try {
+      verifyResult = await facilitatorClient.verify(paymentPayload, paymentRequirements as any);
+    } catch (err: any) {
       return reply.status(402).send({
         error: 'Payment Required',
-        message: verification.error || 'Payment verification failed',
+        message: err.invalidMessage || err.message || 'Payment verification simulation failed',
       });
     }
 
-    if (!verification.nonce) {
+    if (!verifyResult || !verifyResult.isValid) {
       return reply.status(402).send({
         error: 'Payment Required',
-        message: 'Missing challenge nonce in transaction note. Set the transaction note to modu:<nonce>',
+        message:
+          verifyResult?.invalidMessage ||
+          verifyResult?.invalidReason ||
+          'Payment verification failed',
       });
     }
 
-    // Prevent replay attacks: ensure nonce and txid have not been spent
-    const claimResult = await claimPayment(verification.nonce, txidHeader.trim(), endpoint.id);
+    // -------------------------------------------------------------------------
+    // 4. Facilitator Settlement (Co-signs fee-payer txn and broadcasts on-chain)
+    // -------------------------------------------------------------------------
+    let settleResult: any;
+    try {
+      settleResult = await facilitatorClient.settle(paymentPayload, paymentRequirements as any);
+    } catch (err: any) {
+      return reply.status(402).send({
+        error: 'Payment Required',
+        message: err.errorMessage || err.message || 'Payment settlement failed',
+      });
+    }
+
+    if (!settleResult || !settleResult.success) {
+      return reply.status(402).send({
+        error: 'Payment Required',
+        message:
+          settleResult?.errorMessage ||
+          settleResult?.errorReason ||
+          'Payment settlement failed',
+      });
+    }
+
+    const settledTxid = settleResult.transaction || '';
+    const payerAddress = settleResult.payer || verifyResult.payer || '';
+    const settledAmount = settleResult.amount || expectedAmountMicro;
+
+    // -------------------------------------------------------------------------
+    // 5. Replay Protection: Prevent reuse of settled transaction ID
+    // -------------------------------------------------------------------------
+    const claimResult = await claimSettledPayment(settledTxid, endpoint.id);
     if (!claimResult.success) {
       return reply.status(402).send({
         error: 'Payment Required',
-        message: claimResult.error || 'Payment or challenge nonce has already been used',
+        message: claimResult.error || 'Payment transaction has already been spent',
       });
     }
 
-    // Forward request to origin
-    // Calculate subpath
+    // -------------------------------------------------------------------------
+    // 6. Forward Request to Origin API & Return Settlement Receipts
+    // -------------------------------------------------------------------------
     const fullPath = req.url;
     const prefix = `/p/${slug}`;
     const subpath = fullPath.startsWith(prefix) ? fullPath.slice(prefix.length) : '';
@@ -238,27 +492,37 @@ export function buildProxyServer(options: ProxyServerOptions = {}): FastifyInsta
 
     const receipt: PaymentReceipt = {
       status: 'settled',
-      txid: txidHeader.trim(),
-      payer: verification.payer || '',
-      amount: verification.amount || expectedAmountMicro,
-      asset: verification.asset || expectedAssetId,
+      txid: settledTxid,
+      payer: payerAddress,
+      amount: settledAmount,
+      asset: expectedAssetId,
       timestamp: new Date().toISOString(),
     };
 
-    // Attach log listener to finish event
+    // Attach log listener to response finish event
     reply.raw.on('finish', () => {
       const latencyMs = Date.now() - startTime;
       reportLog({
         endpointId: endpoint.id,
-        payerAddress: verification.payer || '',
-        txid: txidHeader.trim(),
-        amount: verification.amount || expectedAmountMicro,
+        payerAddress,
+        txid: settledTxid,
+        amount: settledAmount,
         status: reply.raw.statusCode || 200,
         latencyMs,
       });
     });
 
-    // Forward stream verbatim to origin
+    // Provide both X-PAYMENT-RESPONSE and PAYMENT-RESPONSE receipt headers
+    reply.header('X-PAYMENT-RESPONSE', JSON.stringify(receipt));
+    try {
+      reply.header(
+        'PAYMENT-RESPONSE',
+        Buffer.from(JSON.stringify(settleResult)).toString('base64')
+      );
+    } catch {
+      // ignore
+    }
+
     return await forwardStream(req, reply, { targetUrl, receipt });
   }
 

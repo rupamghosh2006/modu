@@ -57,6 +57,8 @@ services:
           type: web
           name: modu-proxy
           property: host
+      - key: FACILITATOR_URL
+        value: https://facilitator.goplausible.xyz
       - key: INDEXER_URL
         value: https://testnet-idx.algonode.cloud
       - key: CHALLENGE_TIMEOUT_SECONDS

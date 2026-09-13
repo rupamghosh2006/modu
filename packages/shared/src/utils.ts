@@ -85,6 +85,8 @@ const HOP_BY_HOP_HEADERS = new Set([
   'upgrade',
   'host',
   'x-payment-txid',
+  'x-payment',
+  'payment-signature',
 ]);
 
 /**

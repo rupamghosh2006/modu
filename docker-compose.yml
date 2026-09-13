@@ -29,6 +29,7 @@ services:
       HOST: "0.0.0.0"
       CONTROL_PLANE_URL: "http://control-plane:3000"
       PROXY_URL: "http://localhost:4000"
+      FACILITATOR_URL: "https://facilitator.goplausible.xyz"
       INDEXER_URL: "https://testnet-idx.algonode.cloud"
       CHALLENGE_TIMEOUT_SECONDS: 300
     ports:
